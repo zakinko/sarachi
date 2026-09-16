@@ -37,6 +37,14 @@ ln -s busybox "$STAGE/bin/sh"
 
 install -m 0755 "$HERE/init" "$STAGE/init"
 
+# 我々の実行体。静的リンクなので libc を連れて行かなくてよい。
+# BIN で場所を指せる。無ければ busybox だけの骨格として組む。
+BIN=${BIN:-$OUT/unix-mdm-recovery}
+if [ -f "$BIN" ]; then
+    install -m 0755 "$BIN" "$STAGE/bin/unix-mdm-recovery"
+    printf 'recovery  : %s\n' "$(du -h "$BIN" | cut -f1)"
+fi
+
 # 依存はビルド時に解決して順序を固定する。実行時は insmod を並べるだけに
 # なるので、initramfs に depmod も modules.dep も要らず、挙動も決定的になる。
 : > "$STAGE/modules.load"

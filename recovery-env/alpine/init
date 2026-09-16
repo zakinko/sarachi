@@ -50,6 +50,18 @@ for d in /sys/class/net/*; do
 done
 [ "$found" -eq 0 ] && echo "   (なし)"
 
+if [ -x /bin/unix-mdm-recovery ]; then
+    echo "-- unix-mdm-recovery から見たディスク --"
+    /bin/unix-mdm-recovery list
+    # 二台目があれば、そこに対する配置を計算させる。何も書かない。
+    for d in /sys/block/vdb /sys/block/sdb /sys/block/nvme1n1; do
+        [ -d "$d" ] || continue
+        echo "-- ${d##*/} に対する配置（dry-run）--"
+        /bin/unix-mdm-recovery plan "${d##*/}"
+        break
+    done
+fi
+
 echo
 echo "root は一切マウントしていない。ディスクは消去できる状態にある。"
 echo "=============================================="

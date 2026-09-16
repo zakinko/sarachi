@@ -5,3 +5,5 @@
 #   limactl stop alpine-arm64 && limactl delete alpine-arm64
 # 2026-09-16 22:30  Himmelblau の調査用 clone と libhimmelblau の probe
 #   scratchpad 内なのでセッション終了で消える
+# 2026-09-17 00:5x  lima インスタンス freebsd-arm64 (BSD 側の libhimmelblau 検証用)
+#   limactl stop freebsd-arm64 && limactl delete freebsd-arm64

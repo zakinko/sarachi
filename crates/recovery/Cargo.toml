@@ -1,0 +1,17 @@
+[package]
+name = "unix-mdm-recovery"
+description = "回復環境で走る実行体"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+unix-mdm-disk = { path = "../disk" }
+unix-mdm-order = { path = "../order" }
+unix-mdm-image = { path = "../image" }
+
+[[bin]]
+name = "unix-mdm-recovery"
+path = "src/main.rs"
