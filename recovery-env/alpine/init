@@ -1,0 +1,65 @@
+#!/bin/sh
+# 回復環境の init。WinPE 相当の入口にあたる。
+#
+# ここは RAM 上の tmpfs で走る。ディスクは一切マウントしない。
+# WinRE が winre.wim を丸ごと RAM に載せてから走るのと同じ理由で、
+# 消去の対象に自分が乗っていると、消した瞬間に自分が消えるため。
+
+/bin/busybox --install -s /bin 2>/dev/null
+
+mount -t proc     proc     /proc
+mount -t sysfs    sysfs    /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+
+# 依存順はビルド時に確定している。ここは並べて読むだけ。
+if [ -f /modules.load ]; then
+    while read -r m; do
+        [ -f "$m" ] && insmod "$m" 2>/dev/null
+    done < /modules.load
+fi
+
+echo
+echo "=============================================="
+echo " unix-mdm recovery environment"
+echo "=============================================="
+
+echo "-- 自分がどこで走っているか --"
+echo "   root fs : $(awk '$2=="/" {print $3}' /proc/mounts)"
+printf '   memory  : %s MiB\n' "$(( $(awk '/MemTotal/{print $2}' /proc/meminfo) / 1024 ))"
+printf '   kernel  : %s %s\n' "$(uname -r)" "$(uname -m)"
+
+echo "-- ディスクが見えているか --"
+found=0
+for d in /sys/block/*; do
+    n=${d##*/}
+    case "$n" in loop*|ram*) continue ;; esac
+    sz=$(cat "$d/size" 2>/dev/null || echo 0)
+    [ "$sz" -gt 0 ] || continue
+    printf '   %-10s %s MiB\n' "$n" "$(( sz / 2048 ))"
+    found=$((found + 1))
+done
+[ "$found" -eq 0 ] && echo "   (なし)"
+
+echo "-- ネットワークが見えているか --"
+found=0
+for d in /sys/class/net/*; do
+    n=${d##*/}
+    [ "$n" = lo ] && continue
+    printf '   %-10s %s\n' "$n" "$(cat "$d/address" 2>/dev/null)"
+    found=$((found + 1))
+done
+[ "$found" -eq 0 ] && echo "   (なし)"
+
+echo
+echo "root は一切マウントしていない。ディスクは消去できる状態にある。"
+echo "=============================================="
+echo
+
+# 無人で検証する時は、報告だけして止まる。回復環境は最終的に
+# 誰も見ていない場所で走るので、対話シェルに落ちない経路が本番の姿になる。
+if grep -q unixmdm.autotest /proc/cmdline 2>/dev/null; then
+    echo "autotest: 報告を終えたので停止する"
+    poweroff -f
+fi
+
+exec /bin/sh

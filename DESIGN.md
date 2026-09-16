@@ -378,8 +378,10 @@ SSH ホスト鍵が全台同一というだけでも十分まずい。
 - DragonFly の LUKS (dm_target_crypt) 対応。
 - signify / minisign の署名フォーマット互換性。
 - 各 base セットの実サイズ（本文中の数値は目安）。
-- **Secure Boot**。回復環境のカーネルに署名が要る。shim を MS UEFI CA に署名してもらうか、
-  MOK で自前鍵を登録するか、Secure Boot を切るか。本番運用では避けて通れない。
+- **Secure Boot**。UKI にすれば署名対象は単一 PE に畳めるが、その PE を誰の鍵で
+  署名するかは残る（shim を MS UEFI CA に署名してもらうか、MOK で自前鍵を登録するか）。
+- Alpine で `linuxaa64.efi.stub` を得る方法（apk に見当たらない）。
+- 実機用の `lts` カーネルと `linux-firmware` を絞った後の実サイズ。
 - BIOS/MBR 機で回復パーティションへチェーンする方法。
 - 回復環境が必要とする RAM 量（RAM 常駐なので下限が決まる）。低スペック機と Pi で要確認。
 - `linux-firmware` の絞り込み範囲と、絞った結果の initramfs 実サイズ。
@@ -406,6 +408,33 @@ DragonFly と armhf は x86 機（実機 / 別の実機）か実 Pi にまとめ
 
 - **NetBSD を Mac arm の brew 版 qemu で動かすには当て物が要る**（ユーザ実体験）。
   内容は**要記録** — 次に NetBSD VM を立てる時に再発するので、詳細をここに書き残すこと。
+- **Alpine の aarch64 カーネルは EFI zboot 形式**（`MZ..zimg` で始まる PE32+）。
+  qemu の `-kernel` による直接起動では読めず、**何の出力も出さずに固まる**ので
+  原因が分かりにくい。EFI 経由で起動すること（設計上もそれが本来の経路）。
+- **initramfs の `/bin/sh` はビルド時に張る。** `/init` の shebang が解決される
+  時点で既に無いといけない。`busybox --install` は init の中で走るので間に合わず、
+  カーネルは `/init` を ENOENT で見失い "No working init found" で panic する。
+  症状（panic）と原因（symlink 不在）が遠いので、一度踏むと分かりにくい。
+- **qemu の出力を `tail` に繋ぐと何も見えない。** バッファリングで EOF まで出ない。
+  ファイルへ落として別途読むこと。
+
+### 実測値（2026-09-16、Alpine 3.23.4 / aarch64 / kernel 6.18.22-0-virt）
+
+| | 大きさ |
+|---|---|
+| initramfs（busybox-static のみ） | 643 KB |
+| initramfs（+ 選んだモジュール 6 種） | **1.5 MB** |
+| カーネル（vmlinuz-virt） | 9.8 MB |
+| 合計 | **約 11 MB**（回復パーティション 2GB の 0.5%） |
+| 参考: モジュールを全部入れた場合 | 22.7 MB |
+
+モジュールは明示列挙（virtio_blk, virtio_net, nvme, dm-crypt, ext4, vfat）。
+依存はビルド時に `modprobe --show-depends` で解決して順序を固定し、実行時は
+insmod を並べるだけにしてある。initramfs に depmod も modules.dep も要らず、
+挙動も決定的になる。
+
+**ただしこれは VM 用の `virt` カーネルでの値**。実機（ノート、Pi）では `lts`
+カーネルと `linux-firmware` が要り、そちらが本当のサイズ問題になる。
 
 ## 当面の進め方
 
