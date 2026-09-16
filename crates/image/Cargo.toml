@@ -1,0 +1,17 @@
+[package]
+name = "unix-mdm-image"
+description = "署名付きイメージマニフェストと、書き込み前に検証する取り込み"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+unix-mdm-order = { path = "../order" }
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
