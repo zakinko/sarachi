@@ -412,7 +412,10 @@ crypto-erase は**容量に依存しない**（ヘッダのみ書き換える）
   FreeBSD arm64 で実証済み**（FreeBSD は `patches/` の当て物が要る）。
 - **OpenBSD での `openssl` クレート**。LibreSSL 4.3.0 は `openssl-sys 0.9.117` の
   対応上端なので通るはずだが、実際に建てていない。
+  → `vmactions/openbsd-vm` の 7.9 amd64 で当てられる（KVM で走る）。
 - NetBSD と DragonFly でのビルド（どちらも base は OpenSSL なので見込みは良い）。
+  → `vmactions/netbsd-vm` 11.0、`vmactions/dragonflybsd-vm` 6.4.2 で当てられる。
+- GhostBSD 26.1（`vmactions/ghostbsd-vm`）。FreeBSD 派生なので見込みは良い。
 - 回復パーティションの GPT タイプ GUID（XBOOTLDR を使うか独自を振るか）。
 - ブートローダ導入を OS ごとにどう実装するか（rootfs 像方式の代償）。
 - `kanidm-hsm-crypto` の soft バックエンドが BSD で通るか。
@@ -565,6 +568,44 @@ Rust は未導入。
 ただし 3 つとも**後回しにできる**: GhostBSD は FreeBSD 派生で FreeBSD/arm64 の成果がほぼ乗り、
 DragonFly と armhf は x86 機（実機 / 別の実機）か実 Pi にまとめて当てればよい。
 → **arm64 先行で 9 割方が進み、残り 3 つを最後に一括**。
+
+### amd64 側は vmactions で埋まる（2026-09-17 実査）
+
+上で「x86 機か実機が要る」と書いた穴は、GitHub Actions の `vmactions/*` で
+埋まる。**必要な 5 つの BSD と Alpine の amd64 イメージが全て実在する。**
+
+| | amd64 | arm64 |
+|---|---|---|
+| freebsd 15.1 | `freebsd-15.1.qcow2.zst` | あり |
+| netbsd 11.0 | `netbsd-11.0.qcow2.zst` | あり |
+| openbsd 7.9 | `openbsd-7.9.qcow2.zst` | あり |
+| dragonflybsd 6.4.2 | `dragonflybsd-6.4.2.qcow2.zst` | **無し** |
+| ghostbsd 26.1 | `ghostbsd-26.1.qcow2.zst` | **無し** |
+| alpine 3.24 | `alpine-3.24.qcow2.zst` | あり |
+
+DragonFly と GhostBSD に arm64 が無いのは、それぞれの公式情報から出した
+「amd64 のみ」という結論とイメージ側でも一致している。
+
+**そして amd64 ゲストは KVM で走る。** action の `index.js` を読んで確かめた:
+
+- 712-713 行で `/dev/kvm` が在れば `chmod 666` している
+- 448 行のコメントが「x86_64 runner では x86_64/amd64 ゲストだけが KVM で走る」
+- `isSlowEmulatedArch(arch)` は `!!arch && arch !== 'x86_64' && arch !== 'amd64'` で、
+  使われているのは 1396 / 1507 / 1802 の 3 箇所だけ。488 行のコメントどおり
+  rsync のタイムアウト調整であって、**加速器の選択はしていない**
+
+つまり「vmactions は TCG だから遅い」は、ホストと arch が違うゲスト
+（aarch64, riscv64, sparc64, ...）にしか当てはまらない。
+
+確認の手順は 手順 の「Which OS images vmactions actually has」に
+ある。conf は `vmactions/<os>-vm/contents/conf`、image は
+`anyvm-org/<os>-builder` の release asset（タグは `v<BUILDER_VERSION>`）。
+`vmactions/<os>-builder` は古いので見ないこと。
+
+**ただし CI は自動で足さない。** このリポジトリはまだ remote が無く、
+CI を足すかどうかはユーザの判断。`vmactions/*` は起動と導入で 8〜12 分かかる
+高い部類なので、入れるなら既定ブランチへの push と `workflow_dispatch` と
+schedule に限り、PR の push ごとには回さないこと（手順 の CI minutes を参照）。
 
 ### 既知の罠
 
