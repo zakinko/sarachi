@@ -1,9 +1,27 @@
 # このセッションが本プロジェクト外に作ったもの。片付け方を作った時点で書く。
+# 残してあるものは「今後も使うため」であって、忘れているのではない。
+
 # 2026-09-16 22:44  rustup / Rust 1.98.1 を ~/.cargo, ~/.rustup に導入
-#   rustup self uninstall     # 他の作業で使うなら残してよい
+#   rustup self uninstall
+#   → 開発に要るので残している。他の作業でも使うなら消す理由はない。
+
 # 2026-09-16 22:47  lima インスタンス alpine-arm64 (vz, 4cpu/8GB/40GB)
 #   limactl stop alpine-arm64 && limactl delete alpine-arm64
-# 2026-09-16 22:30  Himmelblau の調査用 clone と libhimmelblau の probe
-#   scratchpad 内なのでセッション終了で消える
-# 2026-09-17 00:5x  lima インスタンス freebsd-arm64 (BSD 側の libhimmelblau 検証用)
+#   → 回復環境のビルドと標的の両方で使う。残している。
+
+# 2026-09-17 00:35  lima インスタンス freebsd-arm64 (qemu, 4cpu/8GB/40GB)
 #   limactl stop freebsd-arm64 && limactl delete freebsd-arm64
+#   → BSD 側の検証に使う。残している。
+#   vm-type は qemu であること。vz は Linux 専用で FreeBSD は起動しない。
+
+# 2026-09-17 00:5x  VM の中に作った作業ディレクトリ（消すなら）
+#   alpine-arm64:  ~/recovery-build ~/unix-mdm-build ~/gpt-verify ~/erase-test
+#                  ~/timing-test ~/fw-curated ~/fw-laptop ~/libhb-probe
+#   freebsd-arm64: ~/libhb-probe ~/libkrimes-patch
+#   → いずれも VM ごと消せば無くなる。
+
+# 2026-09-16 22:30〜  scratchpad（Himmelblau の clone、試験イメージ、
+#   署名鍵、ESP、qemu のディスクなど 275MB）
+#   → セッション終了で消える。
+#   ただし scratchpad/dist/signing.key は試験用に生成した署名鍵で、
+#   本番の鍵ではない。消えて困らない。
