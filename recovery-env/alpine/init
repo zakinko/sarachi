@@ -10,6 +10,9 @@
 mount -t proc     proc     /proc
 mount -t sysfs    sysfs    /sys
 mount -t devtmpfs devtmpfs /dev 2>/dev/null
+# udhcpc は一時ファイルと pid の置き場を要る。RAM 上の揮発領域で足りる。
+mkdir -p /run /etc 2>/dev/null
+mount -t tmpfs tmpfs /run 2>/dev/null
 
 # 依存順はビルド時に確定している。ここは並べて読むだけ。
 if [ -f /modules.load ]; then
@@ -49,6 +52,29 @@ for d in /sys/class/net/*; do
     found=$((found + 1))
 done
 [ "$found" -eq 0 ] && echo "   (なし)"
+
+# ネットワークは必要な時だけ上げる。WinRE も既定では常時接続を持たない。
+# 有線が挿さっていればそれが一番速いので先に試す。
+if grep -q unixmdm.net /proc/cmdline 2>/dev/null; then
+    echo "-- ネットワークを上げる --"
+    ifconfig lo 127.0.0.1 up 2>/dev/null
+    for d in /sys/class/net/*; do
+        n=${d##*/}
+        [ "$n" = lo ] && continue
+        ifconfig "$n" up 2>/dev/null
+        # -n で一度きり。回復環境は常駐しないので更新は要らない。
+        # -q でリース取得後に抜ける。取れなければ次の口を試す。
+        if udhcpc -i "$n" -n -q -t 5 -T 3 -s /usr/share/udhcpc/default.script > /run/dhcp.log 2>&1; then
+            addr=$(ifconfig "$n" 2>/dev/null | sed -n 's/.*inet addr:\([0-9.]*\).*/\1/p')
+            printf '   %-10s %s\n' "$n" "${addr:-取れず}"
+            [ -n "$addr" ] && break
+        else
+            printf '   %-10s DHCP 取得に失敗\n' "$n"
+            sed 's/^/     /' /run/dhcp.log 2>/dev/null | head -8
+        fi
+    done
+    [ -f /etc/resolv.conf ] && sed 's/^/   dns: /' /etc/resolv.conf
+fi
 
 if [ -x /bin/unix-mdm-recovery ]; then
     echo "-- unix-mdm-recovery から見たディスク --"

@@ -15,6 +15,10 @@ KVER=${KVER:-$(ls /lib/modules | head -1)}
 # 入れるモジュールはここで明示する。全部入れると 22MB になるが、
 # 挙げたものだけなら一桁小さい。回復環境は小さいほど RAM に載せやすく、
 # 起動も速いので、増やす時は必ず理由を書くこと。
+#
+# af_packet は DHCP に要る。udhcpc は生パケットを使うので、これが無いと
+# socket(AF_PACKET) が「Address family not supported」で失敗する。
+# ネットワークが上がらないと再導入が成立しないので、外せない。
 MODULES="
 virtio_blk
 virtio_net
@@ -22,9 +26,11 @@ nvme
 dm-crypt
 ext4
 vfat
+af_packet
 "
 
-rm -rf "$STAGE"; mkdir -p "$STAGE"/bin "$STAGE"/proc "$STAGE"/sys "$STAGE"/dev "$OUT"
+rm -rf "$STAGE"
+mkdir -p "$STAGE"/bin "$STAGE"/proc "$STAGE"/sys "$STAGE"/dev "$STAGE"/run "$STAGE"/etc "$OUT"
 
 # busybox-static を使うのは、動的リンクだと libc を連れてくる必要があり
 # 下限が測りにくくなるため。まずここを底として、足した分だけ測る。
@@ -36,6 +42,9 @@ cp /bin/busybox.static "$STAGE/bin/busybox"
 ln -s busybox "$STAGE/bin/sh"
 
 install -m 0755 "$HERE/init" "$STAGE/init"
+
+mkdir -p "$STAGE/usr/share/udhcpc" "$STAGE/etc"
+install -m 0755 "$HERE/udhcpc.script" "$STAGE/usr/share/udhcpc/default.script"
 
 # 我々の実行体。静的リンクなので libc を連れて行かなくてよい。
 # BIN で場所を指せる。無ければ busybox だけの骨格として組む。

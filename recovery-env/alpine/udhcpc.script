@@ -1,0 +1,24 @@
+#!/bin/sh
+# udhcpc から呼ばれる設定スクリプト。
+#
+# 回復環境のネットワークは「必要な時だけ上げる」方針で、WinRE も同じく
+# 既定では常時接続を持たない。順序も WinRE に倣う想定:
+# 有線 → 事前設定済みの Wi-Fi → 実 OS から引き継いだプロファイル → 手動。
+
+case "$1" in
+    bound|renew)
+        ifconfig "$interface" "$ip" netmask "${subnet:-255.255.255.0}" up
+        if [ -n "$router" ]; then
+            # 複数返ってくることがあるので先頭だけ使う。
+            route add default gw "${router%% *}" dev "$interface" 2>/dev/null
+        fi
+        if [ -n "$dns" ]; then
+            : > /etc/resolv.conf
+            for d in $dns; do echo "nameserver $d" >> /etc/resolv.conf; done
+        fi
+        ;;
+    deconfig)
+        ifconfig "$interface" 0.0.0.0 2>/dev/null
+        ;;
+esac
+exit 0
