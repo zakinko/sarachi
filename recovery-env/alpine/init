@@ -53,13 +53,20 @@ done
 if [ -x /bin/unix-mdm-recovery ]; then
     echo "-- unix-mdm-recovery から見たディスク --"
     /bin/unix-mdm-recovery list
-    # 二台目があれば、そこに対する配置を計算させる。何も書かない。
-    for d in /sys/block/vdb /sys/block/sdb /sys/block/nvme1n1; do
-        [ -d "$d" ] || continue
-        echo "-- ${d##*/} に対する配置（dry-run）--"
-        /bin/unix-mdm-recovery plan "${d##*/}"
-        break
-    done
+    # unixmdm.partition=<dev> が与えられていれば、そのディスクを実際に切る。
+    # 与えられなければ配置を表示するだけで何も書かない。
+    TARGET=$(sed -n 's/.*unixmdm\.partition=\([^ ]*\).*/\1/p' /proc/cmdline)
+    if [ -n "$TARGET" ]; then
+        echo "-- $TARGET を実際に切る --"
+        /bin/unix-mdm-recovery partition "$TARGET" --commit
+    else
+        for d in /sys/block/vdb /sys/block/sdb /sys/block/nvme1n1; do
+            [ -d "$d" ] || continue
+            echo "-- ${d##*/} に対する配置（dry-run）--"
+            /bin/unix-mdm-recovery plan "${d##*/}"
+            break
+        done
+    fi
 fi
 
 echo

@@ -424,6 +424,38 @@ crypto-erase は**容量に依存しない**（ヘッダのみ書き換える）
 - `linux-firmware` の絞り込み範囲と、絞った結果の initramfs 実サイズ。
 - musl の nscd プロトコルで Himmelblau の NSS 相当をどこまで賄えるか。
 
+## 到達点（2026-09-17 時点）
+
+回復環境が UEFI から RAM 上に起動し、**実際にディスクを切るところまで通った**。
+
+```
+UEFI firmware → systemd-boot → カーネル → initramfs(RAM) → /init
+  → モジュール読み込み → sysfs でディスク認識 → 配置を計算 → GPT を書く
+  → 報告して poweroff
+```
+
+外から確かめた証拠（32GiB の空イメージに対して）:
+
+| 位置 | 内容 |
+|---|---|
+| offset 446 | `ee` = GPT protective、開始 LBA 1、サイズ `0x03FFFFFF` = 67,108,863 セクタ |
+| offset 510 | `55 aa` |
+| LBA 1 | `EFI PART` |
+| 最終 LBA | `EFI PART`（予備ヘッダ） |
+
+疎ファイルの実使用量が 64K であることも証拠になる。GPT の領域だけが書かれている。
+
+initramfs は **1.75 MiB**（busybox 643KB + モジュール 934KB + 実行体 517KB）。
+
+実装済みのクレート:
+
+| | |
+|---|---|
+| `crates/disk` | GPT の配置と書き出し。CRC-32 も自前 |
+| `crates/order` | 署名付き消去命令。Windows の三段に対応 |
+| `crates/image` | 署名付きマニフェストと、書き込み前に検証する取り込み |
+| `crates/recovery` | 回復環境で走る実行体 |
+
 ## 開発環境（2026-09-16）
 
 ホスト: **Apple M4 / macOS 26.6.2 / arm64**。lima・qemu(aarch64/x86_64)・VMware Fusion あり。
