@@ -156,6 +156,10 @@ Alpine が別物である理由:
 | nsdispatch | FreeBSD, GhostBSD, NetBSD, DragonFly |
 | **機構なし**（BSD Authentication） | OpenBSD |
 
+ただし前述のとおり、`libhimmelblau` に直接依存する方針を採ったので、
+**wipe エージェントだけを動かす限りこの表は効かない**。認証統合まで
+広げる時に初めて問題になる。
+
 ### BSD（5）
 
 | | PAM | NSS | 備考 |
@@ -404,10 +408,11 @@ crypto-erase は**容量に依存しない**（ヘッダのみ書き換える）
 
 ## 未検証事項
 
-- **`libhimmelblau` 単体が BSD / arm64 でビルドできるか**（最重要。これが通れば道が開ける）。
-  依存に **`openssl` クレート**（rustls ではない）が入っているのが最大の risk。
-  FreeBSD は base に OpenSSL があるが、**NetBSD と OpenBSD は LibreSSL** で、
-  `openssl` クレートの LibreSSL 対応はバージョンに敏感。Alpine/musl も要確認。
+- ~~`libhimmelblau` 単体が BSD / arm64 でビルドできるか~~ → **Alpine aarch64 musl と
+  FreeBSD arm64 で実証済み**（FreeBSD は `patches/` の当て物が要る）。
+- **OpenBSD での `openssl` クレート**。LibreSSL 4.3.0 は `openssl-sys 0.9.117` の
+  対応上端なので通るはずだが、実際に建てていない。
+- NetBSD と DragonFly でのビルド（どちらも base は OpenSSL なので見込みは良い）。
 - 回復パーティションの GPT タイプ GUID（XBOOTLDR を使うか独自を振るか）。
 - ブートローダ導入を OS ごとにどう実装するか（rootfs 像方式の代償）。
 - `kanidm-hsm-crypto` の soft バックエンドが BSD で通るか。
@@ -480,9 +485,27 @@ BSD ではどちらの枝にも当たらない。**二行の当て物で通る�
 `ELF 64-bit LSB pie executable, ARM aarch64, for FreeBSD 15.1` が出来た。
 当て物は `patches/` に置いてある。**まだ上流へは送っていない。**
 
-懸念していた `openssl` クレートの LibreSSL 問題は、FreeBSD では踏まなかった
-（FreeBSD は base が OpenSSL のため）。**NetBSD と OpenBSD は未検証**で、
-そちらが LibreSSL なので、本当の試験はそこになる。
+### LibreSSL 問題は OpenBSD だけに絞られた（2026-09-17、前言を訂正）
+
+DESIGN.md に「NetBSD と OpenBSD は LibreSSL」と書いていたが、**これは誤り**。
+
+- **NetBSD の base は OpenSSL**（`crypto(7)` と base の libcrypto）。
+  LibreSSL は pkgsrc の選択肢として在るだけで、既定ではない。
+- **LibreSSL を base に持つのは OpenBSD だけ。**
+
+そして OpenBSD 7.9 が載せているのは **LibreSSL 4.3.0**。先に測ったとおり
+`openssl-sys 0.9.117` の対応上限は `libressl430` ＝ ちょうど 4.3 系なので、
+**対応範囲の最上端で収まっている**。
+
+| | base の暗号ライブラリ | 見込み |
+|---|---|---|
+| FreeBSD / GhostBSD | OpenSSL | **実証済み**（当て物を入れて通った） |
+| DragonFly | OpenSSL | 同系統。ただし x86_64 のみで未検証 |
+| NetBSD | OpenSSL | 問題は無いはず。未検証 |
+| **OpenBSD** | **LibreSSL 4.3.0** | 対応範囲の上端。**通るはずだが要検証** |
+
+OpenBSD が LibreSSL 4.4 へ進み、`openssl-sys` が追随する前だと落ちる。
+ここは追いかける必要がある。
 
 ### 計測の罠（この夜に踏んだもの）
 
