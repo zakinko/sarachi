@@ -1,0 +1,11 @@
+[package]
+name = "unix-mdm-disk"
+description = "回復パーティションを含むディスク配置の定義と作成"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+uuid.workspace = true

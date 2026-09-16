@@ -104,8 +104,15 @@ Rust / v5.0.0 / **GPL-3.0-or-later**。18 クレートの workspace。
 検証すべきビルドも「Himmelblau 全部」ではなく
 **「`libhimmelblau` 単体が BSD / arm64 で通るか」**に縮小する。桁違いに安い。
 
-→ **実装言語は Rust で確定**。派生の度合いによってはライセンスも要検討
-  （libhimmelblau 単体のライセンスは**要確認**）。
+→ **実装言語は Rust で確定**。
+
+**ライセンスは問題にならない**（2026-09-16 実測）: `libhimmelblau` は
+**LGPL-3.0-or-later** であって、Himmelblau 本体の GPL-3.0-or-later ではない。
+本プロジェクトが GPL に縛られることはない。配布元は
+`gitlab.com/samba-team/libhimmelblau` で、**Samba チームのプロジェクト**。
+Samba は移植性に厳しい文化なので、BSD 対応の見込みとしても悪くない兆候。
+
+依存は 32 件。うち **`openssl` クレート**が BSD 移植で最大の risk（上記）。
 
 ## 対象
 
@@ -290,12 +297,58 @@ Alpine minirootfs）。ゼロから作らず、上流のクラウドイメージ
 - Range リクエストが効くので、回復環境は**中断したら再開する**実装にすること。
   数百 MB を悪い回線で落とすので、やり直しは致命的。
 
-### 書き込み
+### 同一性の再生成（Windows で言う sysprep /generalize）
 
-`curl | zstd -dc | dd of=<dev>` で流し込む。自動インストーラ（kickstart / preseed /
-AutoYaST / bsdinstall）を 6 通り相手にするより、**dd という 1 機構で全 OS を貫く**。
-書き込み後に最終パーティションを伸ばす処理だけ OS 別に要る
-（`growpart` / `gpart resize` / `resize_ffs`）。
+**dd はパーティションもファイルシステムも、それ以上のものも複製する。**
+焼いたままでは全台が同じ同一性を持つので、初回起動前に振り直す工程が要る。
+
+| 層 | dd で複製されるもの | 再生成 |
+|---|---|---|
+| GPT | ディスク GUID、各パーティション GUID | `sgdisk -G` / `gpart` |
+| FS | ext4/xfs/btrfs UUID、FAT ボリュームシリアル、ZFS pool GUID、UFS fsid | `tune2fs -U random` / `xfs_admin -U` / `btrfstune -U` |
+| **暗号** | **LUKS マスター鍵**と UUID、geli 鍵、cgd 鍵 | **後述。後から変更できない** |
+| ホスト同一性 | `machine-id`、D-Bus machine-id、**SSH ホスト鍵**、random-seed | 削除して初回起動で再生成 |
+| 登録 | Entra/Intune のデバイス ID と証明書 | **イメージに入れない**（Intune もクローンを非対応と明記） |
+| ネットワーク | ホスト名、DHCP DUID、永続 NIC 名 | 再生成 |
+
+SSH ホスト鍵が全台同一というだけでも十分まずい。
+
+### 暗号化済みイメージを dd で配ることは原理的にできない
+
+消去モデルは「鍵を破棄すれば読めなくなる」に全面的に依存している。ところが
+**dd で焼いた全台が同じ LUKS マスター鍵を持つ**と、一台で鍵を破棄しても
+**同じイメージを持つ者は誰でもそのディスクを復号できる**。消去したことにならない。
+
+そして **LUKS のマスター鍵は後から変更できない**。パスフレーズは変えられるが、
+マスター鍵は `cryptsetup-reencrypt` で全体を暗号化し直すしかなく、遅くて危険。
+
+→ **イメージを「全ディスク像」から「rootfs 像」に変える。**
+
+- 回復環境がパーティションを切る → **その場で新しい鍵で LUKS/geli/cgd を作る**
+  → 中に rootfs を展開 → ブートローダを入れる
+- 鍵は回復環境が生成するので、**構造上、台ごとに必ず異なる**。イメージに鍵は入らない
+- 副産物: UUID 衝突が起きない（回復環境が新規に振る）、**後から広げる処理が不要**
+  （最初から実ディスクのサイズで切る）、イメージも小さくなる
+
+代償は**ブートローダ導入を OS ごとに実装する**こと。dd 一本で全 OS を貫く利点の一部を手放す。
+ただし選択の余地は少ない: dd の単純さを守ると crypto-erase が成立せず、
+その crypto-erase は Pi（SD なので物理消去不可）では**唯一の消去手段**であるため。
+
+### パーティション配置
+
+```
+1. ESP       FAT32  512MB   EFI System Partition。実 OS と回復環境の双方のローダを置く
+2. recovery  ext4   2GB     カーネル + initramfs（WinPE 相当）。署名付き read-only
+3. root      残り            LUKS コンテナ。回復環境が台ごとに新しい鍵で作る
+```
+
+**WinRE と違い recovery を root の前に置く。** WinRE が Windows パーティションの直後に
+置くのは、Windows を縮めて回復領域を広げられるようにするため。こちらは回復環境が
+固定サイズの成果物で丸ごと置換され、root は回復環境が実ディスクに合わせて切るので、
+前に置いたほうが root を末尾まで自由に伸ばせる。
+
+サイズは 2GB と大きめに取る。WinRE が「新イメージが既存パーティションに収まらない」
+失敗モードを文書化しているのが教訓（root を縮める／古い回復領域が孤児になる）。
 
 ## セキュリティ上の急所
 
@@ -315,7 +368,11 @@ AutoYaST / bsdinstall）を 6 通り相手にするより、**dd という 1 機
 ## 未検証事項
 
 - **`libhimmelblau` 単体が BSD / arm64 でビルドできるか**（最重要。これが通れば道が開ける）。
-- `libhimmelblau` 単体のライセンス（Himmelblau 本体は GPL-3.0-or-later）。
+  依存に **`openssl` クレート**（rustls ではない）が入っているのが最大の risk。
+  FreeBSD は base に OpenSSL があるが、**NetBSD と OpenBSD は LibreSSL** で、
+  `openssl` クレートの LibreSSL 対応はバージョンに敏感。Alpine/musl も要確認。
+- 回復パーティションの GPT タイプ GUID（XBOOTLDR を使うか独自を振るか）。
+- ブートローダ導入を OS ごとにどう実装するか（rootfs 像方式の代償）。
 - `kanidm-hsm-crypto` の soft バックエンドが BSD で通るか。
 - NetBSD を Mac arm の brew qemu で動かすための当て物の内容。
 - DragonFly の LUKS (dm_target_crypt) 対応。

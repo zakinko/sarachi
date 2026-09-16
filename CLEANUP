@@ -1,0 +1,7 @@
+# このセッションが本プロジェクト外に作ったもの。片付け方を作った時点で書く。
+# 2026-09-16 22:44  rustup / Rust 1.98.1 を ~/.cargo, ~/.rustup に導入
+#   rustup self uninstall     # 他の作業で使うなら残してよい
+# 2026-09-16 22:47  lima インスタンス alpine-arm64 (vz, 4cpu/8GB/40GB)
+#   limactl stop alpine-arm64 && limactl delete alpine-arm64
+# 2026-09-16 22:30  Himmelblau の調査用 clone と libhimmelblau の probe
+#   scratchpad 内なのでセッション終了で消える
