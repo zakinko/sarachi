@@ -12,6 +12,8 @@ use std::fs::OpenOptions;
 use unix_mdm_disk::{Layout, write_gpt};
 
 mod block;
+mod fetch;
+mod install;
 
 fn usage() -> ! {
     eprintln!(
@@ -20,6 +22,9 @@ fn usage() -> ! {
   list                        見えているディスクを並べる
   plan <device>               その機体に対する配置を表示する（何も書かない）
   partition <device> --commit GPT を書く
+  install <device> --manifest <url> --image <url> --key <file> [--commit]
+                              署名を検証しながらイメージを書き戻す
+                              --resume-from <n> で途中から
 
 引数を間違えた時に消えては困るので、--commit が無ければ書き込みはしない。"
     );
@@ -88,6 +93,32 @@ fn main() -> Result<()> {
                 .with_context(|| format!("{} を開けない", d.path.display()))?;
             write_gpt(&layout, &mut f)?;
             println!("\n{} に GPT を書いた", d.path.display());
+        }
+
+        "install" => {
+            let dev = args.get(1).unwrap_or_else(|| usage());
+            let opt = |name: &str| -> Option<String> {
+                args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+            };
+            let (Some(manifest_url), Some(image_url), Some(key_path)) =
+                (opt("--manifest"), opt("--image"), opt("--key"))
+            else {
+                usage()
+            };
+            let trusted = install::load_key(std::path::Path::new(&key_path))?;
+            let target = find(dev)?;
+            let plan = install::Plan {
+                manifest_url: &manifest_url,
+                image_url: &image_url,
+                target: &target.path,
+                resume_from: opt("--resume-from")
+                    .map(|v| v.parse())
+                    .transpose()?
+                    .unwrap_or(0),
+                commit: args.iter().any(|a| a == "--commit"),
+            };
+            println!("{}\n", target.describe());
+            install::run(&plan, &trusted)?;
         }
 
         _ => usage(),

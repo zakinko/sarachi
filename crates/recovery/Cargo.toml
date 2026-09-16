@@ -11,6 +11,10 @@ anyhow.workspace = true
 unix-mdm-disk = { path = "../disk" }
 unix-mdm-order = { path = "../order" }
 unix-mdm-image = { path = "../image" }
+# TLS は rustls。OpenSSL を持ち込まないので initramfs が小さく済み、
+# NetBSD と OpenBSD の LibreSSL 問題も踏まない。証明書は webpki-roots を
+# 焼き込む（回復環境にはシステムの証明書置き場が無い）。
+ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
 
 [[bin]]
 name = "unix-mdm-recovery"

@@ -15,12 +15,16 @@
 //! 作ってはいけない。信頼の根は GitHub の外に置く。
 
 use anyhow::{Result, bail};
-use ed25519_dalek::{Signature, Verifier as _, VerifyingKey};
+use ed25519_dalek::{Signature, Verifier as _};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 
 mod codec;
 pub use codec::MAGIC;
+
+// 利用側が ed25519-dalek を直接引かずに済むよう、鍵の型だけ通す。
+// 回復環境の依存は少ないほどよい。
+pub use ed25519_dalek::VerifyingKey;
 
 /// 既定のチャンク長。小さくするとマニフェストが太り、大きくすると
 /// 再開の粒度が粗くなる。8MiB なら 512MiB のイメージで 64 個。
@@ -80,6 +84,25 @@ pub struct SignedManifest {
 }
 
 impl SignedManifest {
+    /// 配布される形。正規形のバイト列の後ろに 64 バイトの署名を付ける。
+    /// 署名を別ファイルにしないのは、取り違えと片落ちを避けるため。
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = self.manifest.to_canonical_bytes();
+        out.extend_from_slice(&self.signature);
+        out
+    }
+
+    pub fn decode(b: &[u8]) -> Result<Self> {
+        if b.len() < 64 {
+            bail!("署名付きマニフェストとしては短すぎる");
+        }
+        let (body, sig) = b.split_at(b.len() - 64);
+        Ok(SignedManifest {
+            manifest: Manifest::from_canonical_bytes(body)?,
+            signature: sig.try_into().unwrap(),
+        })
+    }
+
     /// 署名を確かめてマニフェストを取り出す。
     /// **これを通っていないマニフェストを使ってはいけない。**
     pub fn verify(&self, trusted: &VerifyingKey) -> Result<&Manifest> {
@@ -304,6 +327,32 @@ mod tests {
         let m = sm.verify(&k.verifying_key()).unwrap();
         let mut out = Vec::new();
         assert!(verify_and_write(m, &mut Cursor::new(&data), &mut out, 9999).is_err());
+    }
+
+    #[test]
+    fn 署名付きマニフェストが往復する() {
+        let k = key();
+        let sm = signed("rt.img", &payload(300), &k);
+        let back = SignedManifest::decode(&sm.encode()).unwrap();
+        assert_eq!(back.manifest, sm.manifest);
+        assert_eq!(back.signature, sm.signature);
+        assert!(back.verify(&k.verifying_key()).is_ok());
+    }
+
+    #[test]
+    fn 署名を一ビット変えると通らない() {
+        let k = key();
+        let sm = signed("rt.img", &payload(300), &k);
+        let mut enc = sm.encode();
+        let last = enc.len() - 1;
+        enc[last] ^= 1;
+        let back = SignedManifest::decode(&enc).unwrap();
+        assert!(back.verify(&k.verifying_key()).is_err());
+    }
+
+    #[test]
+    fn 短すぎる入力を弾く() {
+        assert!(SignedManifest::decode(&[0u8; 32]).is_err());
     }
 
     #[test]
