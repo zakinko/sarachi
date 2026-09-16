@@ -46,6 +46,15 @@ install -m 0755 "$HERE/init" "$STAGE/init"
 mkdir -p "$STAGE/usr/share/udhcpc" "$STAGE/etc"
 install -m 0755 "$HERE/udhcpc.script" "$STAGE/usr/share/udhcpc/default.script"
 
+# 信頼の根。これで配布物の署名を確かめる。本番では回復パーティションに置き、
+# 署名鍵のほうはオフラインに留める。GitHub を一つ落とされた時に
+# イメージと署名の両方が手に入る状態を作らないため。
+PUBKEY=${PUBKEY:-$OUT/signing.pub}
+if [ -f "$PUBKEY" ]; then
+    install -m 0444 "$PUBKEY" "$STAGE/etc/unix-mdm.pub"
+    printf 'pubkey    : %s\n' "$(cat "$PUBKEY")"
+fi
+
 # 我々の実行体。静的リンクなので libc を連れて行かなくてよい。
 # BIN で場所を指せる。無ければ busybox だけの骨格として組む。
 BIN=${BIN:-$OUT/unix-mdm-recovery}

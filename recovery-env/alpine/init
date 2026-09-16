@@ -81,6 +81,18 @@ if [ -x /bin/unix-mdm-recovery ]; then
     /bin/unix-mdm-recovery list
     # unixmdm.partition=<dev> が与えられていれば、そのディスクを実際に切る。
     # 与えられなければ配置を表示するだけで何も書かない。
+    # unixmdm.install=<base-url> が与えられていれば、取得して書き戻す。
+    BASE=$(sed -n 's/.*unixmdm\.install=\([^ ]*\).*/\1/p' /proc/cmdline)
+    DEST=$(sed -n 's/.*unixmdm\.dest=\([^ ]*\).*/\1/p' /proc/cmdline)
+    if [ -n "$BASE" ] && [ -n "$DEST" ]; then
+        echo "-- $DEST へ $BASE から書き戻す --"
+        /bin/unix-mdm-recovery install "$DEST" \
+            --manifest "$BASE/test.manifest" \
+            --image "$BASE/test.img" \
+            --key /etc/unix-mdm.pub \
+            --commit
+    fi
+
     TARGET=$(sed -n 's/.*unixmdm\.partition=\([^ ]*\).*/\1/p' /proc/cmdline)
     if [ -n "$TARGET" ]; then
         echo "-- $TARGET を実際に切る --"

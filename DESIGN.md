@@ -456,6 +456,44 @@ initramfs は **1.75 MiB**（busybox 643KB + モジュール 934KB + 実行体 5
 | `crates/image` | 署名付きマニフェストと、書き込み前に検証する取り込み |
 | `crates/recovery` | 回復環境で走る実行体 |
 
+### BSD の壁は OpenSSL ではなかった（2026-09-17）
+
+FreeBSD 15.1-RELEASE-p3 / aarch64 で `libhimmelblau` を建てたところ、
+**落ちたのは LibreSSL ではなく `libkrimes`** だった。
+
+```
+error[E0425]: cannot find value `res` in this scope
+   --> libkrimes-0.1.0/src/cldap.rs:133:12
+```
+
+`get_domainname()` が `res` を macOS と Linux の `cfg` でしか束縛しておらず、
+BSD ではどちらの枝にも当たらない。**二行の当て物で通る。**
+
+| 系統 | libc のモジュール | 第二引数 |
+|---|---|---|
+| Apple | `unix/bsd/apple` | `c_int` |
+| freebsdlike（FreeBSD, DragonFly） | `unix/bsd/freebsdlike` | `c_int` |
+| netbsdlike（NetBSD, OpenBSD） | `unix/bsd/netbsdlike` | `size_t` |
+| linux_like | `unix/linux_like` | `size_t` |
+
+当てた結果、FreeBSD arm64 で `libhimmelblau` 0.8.41 まで通り、
+`ELF 64-bit LSB pie executable, ARM aarch64, for FreeBSD 15.1` が出来た。
+当て物は `patches/` に置いてある。**まだ上流へは送っていない。**
+
+懸念していた `openssl` クレートの LibreSSL 問題は、FreeBSD では踏まなかった
+（FreeBSD は base が OpenSSL のため）。**NetBSD と OpenBSD は未検証**で、
+そちらが LibreSSL なので、本当の試験はそこになる。
+
+### 計測の罠（この夜に踏んだもの）
+
+- `cargo build 2>&1 | tail -30` の終了ステータスは `tail` のもので、
+  **cargo の成否にならない**。一度これで「成功」と誤報した。
+  成果物の存在で判定すること。
+- FreeBSD には python3 が入っていない。当て物は sed で当てた。
+- lima の `vm-type=vz`（Virtualization.framework）は **Linux 専用**で、
+  FreeBSD は起動しない。`--vm-type=qemu` を使う。無言で失敗し、
+  インスタンスのディレクトリにディスクイメージが出来ないので気づきにくい。
+
 ## 開発環境（2026-09-16）
 
 ホスト: **Apple M4 / macOS 26.6.2 / arm64**。lima・qemu(aarch64/x86_64)・VMware Fusion あり。

@@ -1,0 +1,14 @@
+--- /home/zakinko.guest/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libkrimes-0.1.0/src/cldap.rs	2006-07-24 10:21:28.000000000 +0900
++++ /home/zakinko.guest/libkrimes-patch/libkrimes/src/cldap.rs	2026-09-17 00:48:12.251553000 +0900
+@@ -125,9 +125,9 @@
+         let ptr = buf.as_mut_ptr().cast();
+         let len = buf.capacity();
+ 
+-        #[cfg(target_os = "macos")]
++        #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "dragonfly"))]
+         let res = unsafe { libc::getdomainname(ptr, len as libc::c_int) };
+-        #[cfg(target_os = "linux")]
++        #[cfg(any(target_os = "linux", target_os = "netbsd", target_os = "openbsd"))]
+         let res = unsafe { libc::getdomainname(ptr, len as libc::size_t) };
+ 
+         if res == -1 {
