@@ -41,6 +41,26 @@ recovery-env/     WinPE 相当の initramfs を組む
 patches/          上流へ出す候補の当て物（まだ送っていない）
 ```
 
+## 今どこまで動くか
+
+**一周が閉じている。** 外部媒体から起動した回復環境が、ESP と回復領域と root を
+埋め、そのディスクだけで起動し直すと回復環境が自分で立ち上がる。
+
+```
+[外部媒体]  署名検証 → GPT → ESP → 回復領域 → LUKS2(台ごとの鍵) → rootfs
+[自己起動]  UEFI → systemd-boot → カーネル+initramfs → 回復環境
+[消去]      Factory: crypto-erase / Destroy: + ヘッダ + 回復領域 + GPT
+```
+
+外から確かめたこと: 導入後に回復環境が作った鍵で LUKS を開いて中身が読め、
+別の鍵では開かない。Factory 消去の後は同じ鍵でも
+`No usable keyslot is available.` になる。Destroy の後は主・予備とも GPT が消える。
+外部媒体を繋がずディスク一つで起動して回復環境が立ち上がる。
+
+確かめていないこと、未着手のものは [DESIGN.md](DESIGN.md) の「未検証事項」に
+まとめてある。実機のカーネルとファームウェア、FreeBSD 以外の BSD、
+Secure Boot、鍵をどこに預けるか、あたりが残っている。
+
 ## 回復環境
 
 WinRE と同じく、自分を丸ごと RAM に載せてから走る。消去の対象に自分が
@@ -62,10 +82,22 @@ UEFI → systemd-boot → カーネル → initramfs(RAM) → /init
 回復環境のビルドは Alpine の上で走らせる。
 
 ```sh
-recovery-env/alpine/build.sh          # initramfs を組む
-cargo test --workspace                # 全クレートの試験
-cargo run -p unix-mdm-disk --example plan          # 配置を見る（何も書かない）
+recovery-env/alpine/build.sh     # initramfs を組む（Alpine の上で）
+recovery-env/alpine/bundle.sh    # 配る三つの像を作る
+cargo test --workspace           # 全クレートの試験
+cargo run -p unix-mdm-disk --example plan                # 配置を見る（何も書かない）
 cargo run -p unix-mdm-image --example sign -- keygen .   # 署名鍵を作る
+cargo run -p unix-mdm-image --example sign -- sign rootfs.img signing.key
+```
+
+回復環境の側:
+
+```
+unix-mdm-recovery list
+unix-mdm-recovery plan <dev>
+unix-mdm-recovery wipe <dev> --level reset|factory|destroy [--commit]
+unix-mdm-recovery provision <dev> --base <url> --key <pub> \
+                  --esp esp --recovery recovery --rootfs rootfs [--commit]
 ```
 
 `unix-mdm-recovery` は既定で何も書かない。`--commit` を明示しない限り、
