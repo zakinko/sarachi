@@ -97,6 +97,18 @@ pub fn run(disk: &Path, size_bytes: u64, sector_size: u64, level: Level, commit:
     }
 
     if !level.keeps_recovery() {
+        // 鍵を破棄した時点でデータは復元不能だが、ヘッダが残っていると
+        // 「ここに暗号化された何かが在った」と言い続ける。この段は
+        // 何も残さないための段なので、痕跡も消す。
+        if let Some(rootp) = layout.get(Role::Root) {
+            let mut f = OpenOptions::new().write(true).open(disk)?;
+            f.seek(SeekFrom::Start(rootp.first_lba * layout.sector_size))?;
+            // LUKS2 のヘッダ領域は既定 16MiB。その先頭を潰せば足りる。
+            f.write_all(&vec![0u8; 4 * 1024 * 1024])?;
+            f.flush()?;
+            println!("LUKS ヘッダ : 潰した");
+        }
+
         destroy_recovery(disk, &layout)?;
         r.recovery_destroyed = true;
         println!("回復領域    : 潰した");

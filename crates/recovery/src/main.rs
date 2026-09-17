@@ -30,9 +30,11 @@ fn usage() -> ! {
                               --resume-from <n> で途中から
   wipe <device> --level reset|factory|destroy [--commit]
                               鍵を破棄して消す。段階は Windows の三段に対応
-  provision <device> --manifest <url> --image <url> --key <file>
-                     --key-out <file> [--commit]
-                              切る→台ごとの鍵で暗号化→中へ書く、を一周
+  provision <device> --base <url> --key <file> [--commit]
+                     [--esp <name>] [--recovery <name>] [--rootfs <name>]
+                     [--key-out <file>] [--print-key]
+                              切る→ESPと回復領域を埋める→台ごとの鍵で
+                              暗号化して root を書く、を一周
 
 引数を間違えた時に消えては困るので、--commit が無ければ書き込みはしない。"
     );
@@ -156,11 +158,10 @@ fn main() -> Result<()> {
             let opt = |name: &str| -> Option<String> {
                 args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
             };
-            let (Some(manifest_url), Some(image_url), Some(key_path)) =
-                (opt("--manifest"), opt("--image"), opt("--key"))
-            else {
-                usage()
-            };
+            let (Some(base), Some(key_path)) = (opt("--base"), opt("--key")) else { usage() };
+            let rootfs = opt("--rootfs").unwrap_or_else(|| "rootfs".into());
+            let esp = opt("--esp");
+            let recovery = opt("--recovery");
             let key_out = opt("--key-out").unwrap_or_else(|| "/run/unixmdm-root.key".into());
             let trusted = install::load_key(std::path::Path::new(&key_path))?;
             let d = find(dev)?;
@@ -172,8 +173,12 @@ fn main() -> Result<()> {
                 disk: &d.path,
                 size_bytes: d.size_bytes,
                 sector_size: d.logical_sector_size,
-                manifest_url: &manifest_url,
-                image_url: &image_url,
+                bundle: provision::Bundle {
+                    base: &base,
+                    esp: esp.as_deref(),
+                    recovery: recovery.as_deref(),
+                    rootfs: &rootfs,
+                },
                 key_out: std::path::Path::new(&key_out),
                 commit: args.iter().any(|a| a == "--commit"),
                 print_key: args.iter().any(|a| a == "--print-key"),

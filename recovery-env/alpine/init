@@ -100,8 +100,8 @@ if [ -x /bin/unix-mdm-recovery ]; then
     if [ -n "$PROV" ] && [ -n "$PBASE" ]; then
         echo "-- $PROV を一周させる（切る→暗号化→書く）--"
         /bin/unix-mdm-recovery provision "$PROV" \
-            --manifest "$PBASE/rootfs.manifest" \
-            --image "$PBASE/rootfs.img" \
+            --base "$PBASE" \
+            --esp esp --recovery recovery --rootfs rootfs \
             --key /etc/unix-mdm.pub \
             --key-out /run/unixmdm-root.key \
             --print-key \
