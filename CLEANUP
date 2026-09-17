@@ -25,3 +25,10 @@
 #   → セッション終了で消える。
 #   ただし scratchpad/dist/signing.key は試験用に生成した署名鍵で、
 #   本番の鍵ではない。消えて困らない。
+
+# 2026-09-17 16:xx  当て物の検査で入れたもの
+#   rustup toolchain uninstall nightly     # -Z build-std に要った nightly
+#   rustup target remove x86_64-unknown-netbsd x86_64-unknown-freebsd aarch64-unknown-freebsd
+#   → いずれも当て物の再検査に要るので残している。
+#   scratchpad の bsdboxes（DragonFly の image 322M）と patchtest は
+#   セッション終了で消える。
