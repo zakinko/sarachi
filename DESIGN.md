@@ -411,11 +411,17 @@ crypto-erase は**容量に依存しない**（ヘッダのみ書き換える）
 - ~~`libhimmelblau` 単体が BSD / arm64 でビルドできるか~~ → **Alpine aarch64 musl と
   FreeBSD arm64 で実証済み**（FreeBSD は `patches/` の当て物が要る）。
 - **OpenBSD での `openssl` クレート**。LibreSSL 4.3.0 は `openssl-sys 0.9.117` の
-  対応上端なので通るはずだが、実際に建てていない。
-  → `vmactions/openbsd-vm` の 7.9 amd64 で当てられる（KVM で走る）。
-- NetBSD と DragonFly でのビルド（どちらも base は OpenSSL なので見込みは良い）。
-  → `vmactions/netbsd-vm` 11.0、`vmactions/dragonflybsd-vm` 6.4.2 で当てられる。
-- GhostBSD 26.1（`vmactions/ghostbsd-vm`）。FreeBSD 派生なので見込みは良い。
+  対応上端なので通るはずだが、実際に建てていない。**cross では確かめられない**
+  （上記のとおり `openssl-sys` が標的側の OpenSSL を要る）ので実機が要る。
+  → `vmactions/openbsd-vm` の 7.9 amd64（KVM で走る）。
+- NetBSD での **`aws-lc-sys`**。cross では標的の C toolchain が無くて落ちた。
+  実機なら通るのか、それとも移植性の問題があるのかは未確認。
+- DragonFly と GhostBSD でのビルド。
+  → `vmactions/dragonflybsd-vm` 6.4.2、`vmactions/ghostbsd-vm` 26.1。
+
+なお `libkrimes` 単体は **DragonFly と OpenBSD を含む四つの BSD 向けに
+手元で建つところまで確認済み**（`patches/README.md` の表）。上の未検証は
+`libhimmelblau` 本体の話。
 - 回復パーティションの GPT タイプ GUID（XBOOTLDR を使うか独自を振るか）。
 - ブートローダ導入を OS ごとにどう実装するか（rootfs 像方式の代償）。
 - `kanidm-hsm-crypto` の soft バックエンドが BSD で通るか。
@@ -564,6 +570,28 @@ DESIGN.md に「NetBSD と OpenBSD は LibreSSL」と書いていたが、**こ�
 
 OpenBSD が LibreSSL 4.4 へ進み、`openssl-sys` が追随する前だと落ちる。
 ここは追いかける必要がある。
+
+### cross では答えの出ない問いがある（2026-09-17）
+
+`libkrimes` は純 Rust なので、nightly の `-Z build-std` を使えば tier 3 の
+DragonFly と OpenBSD 向けにも手元で建てられた。当て物の検査はこれで足りた。
+
+**しかし `libhimmelblau` 本体は同じ手では確かめられない。** C のライブラリを
+要るためで、cross では標的側のそれが無い。
+
+| 標的 | 落ちた場所 |
+|---|---|
+| x86_64-unknown-dragonfly | `openssl-sys` — 標的の OpenSSL が見つからない |
+| x86_64-unknown-openbsd | 同上 |
+| x86_64-unknown-netbsd | **`aws-lc-sys`** — rustls の暗号バックエンドが標的ごとに違う |
+
+NetBSD で `aws-lc-sys` が出てくるのは注意すべき点で、こちらも C のライブラリ
+なので、それ自体が移植性の関門になり得る。
+
+→ **OpenBSD の LibreSSL 問題は cross では原理的に検証できない。実機が要る。**
+これは「箱が無い」とは別の問題で、箱はある（`vmactions/openbsd-vm` の 7.9、
+または `zakinko/netbsd-ci-images` の `build-openbsd-image.sh`）。
+CI を足すかどうかがユーザの判断待ちなので、そこで止まっている。
 
 ### 計測の罠（この夜に踏んだもの）
 
