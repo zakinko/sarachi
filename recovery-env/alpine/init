@@ -93,6 +93,29 @@ if [ -x /bin/unix-mdm-recovery ]; then
             --commit
     fi
 
+    # unixmdm.provision=<dev> unixmdm.base=<url> で一周する。
+    # 切る → 台ごとの鍵で暗号化 → 中へ書く。
+    PROV=$(sed -n 's/.*unixmdm\.provision=\([^ ]*\).*/\1/p' /proc/cmdline)
+    PBASE=$(sed -n 's/.*unixmdm\.base=\([^ ]*\).*/\1/p' /proc/cmdline)
+    if [ -n "$PROV" ] && [ -n "$PBASE" ]; then
+        echo "-- $PROV を一周させる（切る→暗号化→書く）--"
+        /bin/unix-mdm-recovery provision "$PROV" \
+            --manifest "$PBASE/rootfs.manifest" \
+            --image "$PBASE/rootfs.img" \
+            --key /etc/unix-mdm.pub \
+            --key-out /run/unixmdm-root.key \
+            --print-key \
+            --commit
+    fi
+
+    # unixmdm.wipe=<dev> unixmdm.level=<段階> で消す。
+    WDEV=$(sed -n 's/.*unixmdm\.wipe=\([^ ]*\).*/\1/p' /proc/cmdline)
+    WLVL=$(sed -n 's/.*unixmdm\.level=\([^ ]*\).*/\1/p' /proc/cmdline)
+    if [ -n "$WDEV" ] && [ -n "$WLVL" ]; then
+        echo "-- $WDEV を消す（段階 $WLVL）--"
+        /bin/unix-mdm-recovery wipe "$WDEV" --level "$WLVL" --commit
+    fi
+
     TARGET=$(sed -n 's/.*unixmdm\.partition=\([^ ]*\).*/\1/p' /proc/cmdline)
     if [ -n "$TARGET" ]; then
         echo "-- $TARGET を実際に切る --"

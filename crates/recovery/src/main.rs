@@ -12,8 +12,11 @@ use std::fs::OpenOptions;
 use unix_mdm_disk::{Layout, write_gpt};
 
 mod block;
+mod crypt;
 mod fetch;
 mod install;
+mod provision;
+mod wipe;
 
 fn usage() -> ! {
     eprintln!(
@@ -23,8 +26,13 @@ fn usage() -> ! {
   plan <device>               その機体に対する配置を表示する（何も書かない）
   partition <device> --commit GPT を書く
   install <device> --manifest <url> --image <url> --key <file> [--commit]
-                              署名を検証しながらイメージを書き戻す
+                              署名を検証しながら生のディスクへ書き戻す
                               --resume-from <n> で途中から
+  wipe <device> --level reset|factory|destroy [--commit]
+                              鍵を破棄して消す。段階は Windows の三段に対応
+  provision <device> --manifest <url> --image <url> --key <file>
+                     --key-out <file> [--commit]
+                              切る→台ごとの鍵で暗号化→中へ書く、を一周
 
 引数を間違えた時に消えては困るので、--commit が無ければ書き込みはしない。"
     );
@@ -119,6 +127,58 @@ fn main() -> Result<()> {
             };
             println!("{}\n", target.describe());
             install::run(&plan, &trusted)?;
+        }
+
+        "wipe" => {
+            let dev = args.get(1).unwrap_or_else(|| usage());
+            let level = match args.iter().position(|a| a == "--level")
+                .and_then(|i| args.get(i + 1)).map(String::as_str)
+            {
+                Some("reset") => unix_mdm_order::Level::Reset,
+                Some("factory") => unix_mdm_order::Level::Factory,
+                Some("destroy") => unix_mdm_order::Level::Destroy,
+                _ => {
+                    eprintln!("--level は reset / factory / destroy のいずれか");
+                    std::process::exit(2);
+                }
+            };
+            let d = find(dev)?;
+            println!("{}\n", d.describe());
+            if d.removable && args.iter().any(|a| a == "--commit") {
+                bail!("{} は取り外し可能な媒体に見える。作業用の USB を消しかねないので断る", d.name);
+            }
+            wipe::run(&d.path, d.size_bytes, d.logical_sector_size, level,
+                      args.iter().any(|a| a == "--commit"))?;
+        }
+
+        "provision" => {
+            let dev = args.get(1).unwrap_or_else(|| usage());
+            let opt = |name: &str| -> Option<String> {
+                args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+            };
+            let (Some(manifest_url), Some(image_url), Some(key_path)) =
+                (opt("--manifest"), opt("--image"), opt("--key"))
+            else {
+                usage()
+            };
+            let key_out = opt("--key-out").unwrap_or_else(|| "/run/unixmdm-root.key".into());
+            let trusted = install::load_key(std::path::Path::new(&key_path))?;
+            let d = find(dev)?;
+            println!("{}\n", d.describe());
+            if d.removable && args.iter().any(|a| a == "--commit") {
+                bail!("{} は取り外し可能な媒体に見える。断る", d.name);
+            }
+            let plan = provision::Plan {
+                disk: &d.path,
+                size_bytes: d.size_bytes,
+                sector_size: d.logical_sector_size,
+                manifest_url: &manifest_url,
+                image_url: &image_url,
+                key_out: std::path::Path::new(&key_out),
+                commit: args.iter().any(|a| a == "--commit"),
+                print_key: args.iter().any(|a| a == "--print-key"),
+            };
+            provision::run(&plan, &trusted)?;
         }
 
         _ => usage(),

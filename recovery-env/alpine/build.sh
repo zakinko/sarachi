@@ -82,6 +82,26 @@ for m in $MODULES; do
     done
 done
 
+# cryptsetup は自前実装しない。LUKS2 を書き起こすのは大きすぎるし、
+# 鍵の扱いを間違えれば消去そのものが成立しなくなる。ただしパッケージ一式は
+# 7MiB あるので、実際にリンクしているものだけを連れて行く。
+# モジュールとファームウェアで採ったのと同じ方針で、足したものが数字に出る形を保つ。
+if [ -x /sbin/cryptsetup ]; then
+    mkdir -p "$STAGE/sbin" "$STAGE/lib" "$STAGE/usr/lib"
+    cp /sbin/cryptsetup "$STAGE/sbin/cryptsetup"
+    # ldd の出力から実体のパスだけを拾い、同じ場所へ置く。
+    ldd /sbin/cryptsetup 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /^\//) print $i}' | sort -u | \
+    while read -r so; do
+        [ -f "$so" ] || continue
+        mkdir -p "$STAGE$(dirname "$so")"
+        cp -L "$so" "$STAGE$so" 2>/dev/null || true
+    done
+    # du -sh は単位付きなので足せない。-sb のバイト数で数える。
+    libs=$(du -sb "$STAGE/usr/lib" "$STAGE/lib" 2>/dev/null | awk '{s+=$1} END {print int(s/1024)}')
+    printf 'cryptsetup: %s KiB + 共有ライブラリ %s KiB\n' \
+        "$(( $(du -b /sbin/cryptsetup | cut -f1) / 1024 ))" "${libs:-0}"
+fi
+
 ( cd "$STAGE" && find . | cpio -o -H newc --quiet ) | gzip -9 > "$OUT/initramfs.gz"
 
 printf 'initramfs : %s\n' "$(du -h "$OUT/initramfs.gz" | cut -f1)"
