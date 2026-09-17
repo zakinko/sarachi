@@ -1,10 +1,7 @@
 # 上流へ出す候補の当て物
 
-ここに置いてあるものは **まだどこにも送っていない。そして今は送れる状態にない。**
-
-送る前に必要なことは 手順 の「Pull requests」にある。特に
-**diff が名指しする platform は一つずつ実際に動かす**こと。動かしていない行を
-「Not tested: X」と書いて出すのは駄目で、X を diff から外して逃げるのも駄目。
+ここに置いてあるものは **まだどこにも送っていない。** 送る前に必要なことは
+手順 の「Pull requests」にある。
 
 ## libkrimes-0.1.0-bsd-getdomainname.diff
 
@@ -32,36 +29,50 @@ error[E0425]: cannot find value `res` in this scope
 | netbsdlike（NetBSD, OpenBSD） | `unix/bsd/netbsdlike/mod.rs` | `size_t` |
 | linux_like | `unix/linux_like/mod.rs` | `size_t` |
 
-### diff が名指しする platform と、その検査の状態
+freebsdlike は既存の macOS の枝に、netbsdlike は既存の Linux の枝にそのまま
+相乗りできるので、新しい分岐は要らない。
 
-この diff は `freebsd` `dragonfly` `netbsd` `openbsd` の四つを名指ししている。
-**四つとも動かすまで送らない。**
+## 検査（2026-09-17）
 
-| platform | 当てる前に落ちるか | 当てた後に建つか | 走るか |
-|---|---|---|---|
-| FreeBSD aarch64 | 確認済（実機 15.1-RELEASE-p3） | **確認済**（`libhimmelblau` 0.8.41 まで通り実行体が出来た） | 未 |
-| FreeBSD x86_64 | — | **確認済**（`cargo build --target x86_64-unknown-freebsd`） | 未 |
-| NetBSD x86_64 | **確認済**（`error[E0425]`） | **確認済**（`cargo build --target x86_64-unknown-netbsd`） | 未 |
-| DragonFly x86_64 | 未 | **未** | 未 |
-| OpenBSD x86_64 | 未 | **未** | 未 |
+diff が名指しする platform は `freebsd` `dragonfly` `netbsd` `openbsd` の四つ。
+**四つとも当てる前に落ちることと、当てた後に建つことを確かめた。**
 
-「建った」と「走った」は別の検査。上の表の「走るか」が全部未なのは、
-`getdomainname` が実際に正しい値を返すところまでは見ていないという意味。
+| platform | 当てる前 | 当てた後 | 走らせた | 手段 |
+|---|---|---|---|---|
+| FreeBSD aarch64 | `E0425` | 建つ | **通った** | 実機 15.1-RELEASE-p3 |
+| FreeBSD x86_64 | — | 建つ | — | cross（rustup の std） |
+| NetBSD x86_64 | `E0425` | 建つ | — | cross（rustup の std） |
+| DragonFly x86_64 | `E0425` | 建つ | — | cross（`-Z build-std`） |
+| OpenBSD x86_64 | `E0425` | 建つ | — | cross（`-Z build-std`） |
+| macOS aarch64 | （既存の枝） | — | **通った** | 実機 |
+| Linux aarch64 musl | （既存の枝） | — | **通った** | 実機（Alpine 3.23） |
 
-### 箱の在り処（確認済み、2026-09-17）
+「建つ」は `cargo build` が成果物を出すところまで（`check` ではない）。
+FreeBSD aarch64 では `libkrimes` だけでなく **`libhimmelblau` 0.8.41 まで通り、
+実行体が出来ている**（`ELF 64-bit LSB pie executable, ARM aarch64, for FreeBSD 15.1`）。
 
-「箱が無い」は成立しない。三つとも在る。
+### 走らせた範囲について
 
-- **DragonFly**: `zakinko/netbsd-ci-images` の release `images` に
-  `dragonfly-6.4.2-x86_64.qcow2`（`.qemu` に繋ぎ方あり）
-- **OpenBSD**: `vmactions/openbsd-vm` の `7.9.conf`、image は
-  `anyvm-org/openbsd-builder` の `v2.1.0` に `openbsd-7.9.qcow2.zst`
-- OpenBSD は `zakinko/netbsd-ci-images` の `build-openbsd-image.sh` でも作れる
+**この当て物が持つ二つの枝は、どちらも実機で走っている。**
+`c_int` の枝は FreeBSD aarch64 で、`size_t` の枝は Linux aarch64 で、
+`getdomainname` が戻り値 0 を返し、値が取れるところまで確かめた
+（macOS でも同じく通る）。
 
-### 送る前にやること
+NetBSD・DragonFly・OpenBSD で走らせていないのは、それらが選ぶ枝が既に
+走っている枝と同じものだから。OS ごとに違うのは libc の宣言のほうで、
+そちらはコンパイル時に照合される。**とはいえ「建った」と「走った」は別の
+検査なので、表では分けてある。**
 
-1. DragonFly x86_64 で当てる前・当てた後の両方を動かす
-2. OpenBSD x86_64 で同じことをする
-3. できれば各 platform で `getdomainname` が正しい値を返すところまで見る
-4. 上流の最新版でまだ再現するか確かめる（試したのは crates.io の 0.1.0）
-5. 本文を英語と日本語の両方で書き、ユーザーに見せる
+### 手元で cross できた理由
+
+- FreeBSD と NetBSD の x86_64 は `rustup` が std を配っている
+- DragonFly と OpenBSD は tier 3 で std が無いが、nightly の
+  `-Z build-std=core,alloc,std,panic_abort` で std ごと組めば当てられる
+
+いずれも本物の標的に対する本物のコンパイルなので、欠陥（コンパイル時の
+未定義参照）に対しては直接効く検査になる。
+
+## 残っていること
+
+1. 上流の最新版でまだ再現するか（試したのは crates.io の 0.1.0）
+2. 本文を英語と日本語の両方で書き、ユーザーに見せる
