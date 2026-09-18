@@ -32,3 +32,22 @@
 #   → いずれも当て物の再検査に要るので残している。
 #   scratchpad の bsdboxes（DragonFly の image 322M）と patchtest は
 #   セッション終了で消える。
+
+# 2026-09-18 13:40  容量が逼迫したので、このセッションの作った物を整理した
+#   scratchpad         5.4GB 解放（qemu のディスク、署名した試験用の配布物、
+#                      Himmelblau の clone、当て物の検査に使った木）
+#   ~/.lima            26GB 解放（alpine-arm64 10G と freebsd-arm64 16G を削除）
+#   ~/.cargo/registry  459MB 解放（再取得できるキャッシュ）
+#
+#   残しているもの:
+#   ~/Library/Caches/lima  5.4GB  VM を作り直す時の再取得を避けるため。
+#                                 これを消すと次回 image を落とし直す。
+#   ~/.rustup              1.4GB  nightly は当て物の再検査（-Z build-std）に要る。
+#                                 stable は普段の開発に要る。
+#
+#   VM の作り直し方:
+#     limactl create --name=alpine-arm64 --vm-type=vz --arch=aarch64 \
+#       --cpus=4 --memory=8 --disk=40 --tty=false template://alpine-3.23
+#     limactl create --name=freebsd-arm64 --vm-type=qemu --arch=aarch64 \
+#       --cpus=4 --memory=8 --disk=40 --tty=false template://freebsd-15
+#   その後 recovery-env/alpine/build.sh と bundle.sh で回復環境は再現できる。

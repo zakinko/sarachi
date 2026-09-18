@@ -42,7 +42,7 @@ diff が名指しする platform は `freebsd` `dragonfly` `netbsd` `openbsd` �
 | FreeBSD aarch64 | `E0425` | 建つ | **通った** | 実機 15.1-RELEASE-p3 |
 | FreeBSD x86_64 | — | 建つ | — | cross（rustup の std） |
 | NetBSD x86_64 | `E0425` | 建つ | — | cross（rustup の std） |
-| DragonFly x86_64 | `E0425` | 建つ | — | cross（`-Z build-std`） |
+| DragonFly x86_64 | **`E0425`（実機でも確認）** | 建つ | — | cross（`-Z build-std`）＋ 実機 6.4.2-RELEASE |
 | OpenBSD x86_64 | `E0425` | 建つ | — | cross（`-Z build-std`） |
 | macOS aarch64 | （既存の枝） | — | **通った** | 実機 |
 | Linux aarch64 musl | （既存の枝） | — | **通った** | 実機（Alpine 3.23） |
@@ -62,6 +62,16 @@ NetBSD・DragonFly・OpenBSD で走らせていないのは、それらが選ぶ
 走っている枝と同じものだから。OS ごとに違うのは libc の宣言のほうで、
 そちらはコンパイル時に照合される。**とはいえ「建った」と「走った」は別の
 検査なので、表では分けてある。**
+
+### DragonFly は実機でも確かめた（2026-09-18）
+
+`zakinko/netbsd-ci-images` の image で実機を立て、素の `libkrimes` が
+そこでも `E0425` で落ちることを確認した。cross での再現より強い。
+
+同じ機体で `libhimmelblau` まで建てようとしたが、そちらは別の理由で落ちる。
+DragonFly が配る rustc が 1.85.1 と古く、`yoke-derive 0.8.3` が使う
+`str::from_utf8` をまだ持たない。**当て物とは無関係の壁**で、
+`libkrimes` 自体は当て物を入れれば通る。
 
 ### 手元で cross できた理由
 

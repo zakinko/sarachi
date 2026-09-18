@@ -564,12 +564,47 @@ DESIGN.md に「NetBSD と OpenBSD は LibreSSL」と書いていたが、**こ�
 | | base の暗号ライブラリ | 見込み |
 |---|---|---|
 | FreeBSD / GhostBSD | OpenSSL | **実証済み**（当て物を入れて通った） |
-| DragonFly | OpenSSL | 同系統。ただし x86_64 のみで未検証 |
+| DragonFly | **LibreSSL 3.6.1** | 実機で確認。ただし rust が古く `libhimmelblau` は建たない |
 | NetBSD | OpenSSL | 問題は無いはず。未検証 |
 | **OpenBSD** | **LibreSSL 4.3.0** | 対応範囲の上端。**通るはずだが要検証** |
 
 OpenBSD が LibreSSL 4.4 へ進み、`openssl-sys` が追随する前だと落ちる。
 ここは追いかける必要がある。
+
+### DragonFly 実機での結果（2026-09-18）— 前言を二つ訂正
+
+`zakinko/netbsd-ci-images` の image で実機の DragonFly 6.4.2-RELEASE を立て、
+その上で確かめた。
+
+**訂正 1: DragonFly は LibreSSL。** 「freebsdlike だから base は OpenSSL」と
+書いていたが誤り。実機の `openssl version` は **LibreSSL 3.6.1** だった。
+LibreSSL を base に持つのは OpenBSD だけ、という前の記述も誤りになる。
+
+| | base の暗号ライブラリ | 確かめ方 |
+|---|---|---|
+| FreeBSD | OpenSSL | 実機（`libhimmelblau` が通った） |
+| **DragonFly** | **LibreSSL 3.6.1** | **実機で確認** |
+| NetBSD | OpenSSL | 未確認（man と base の libcrypto から） |
+| OpenBSD | LibreSSL 4.3.0 | リリースノート |
+
+**訂正 2: DragonFly では `libhimmelblau` が建たない。ただし当て物のせいではない。**
+`yoke-derive 0.8.3` が `str::from_utf8` を使っているが、DragonFly が配っている
+**rustc が 1.85.1（2025-03）と古く**、その関連関数をまだ持たない。
+
+```
+error[E0599]: no function or associated item named `from_utf8` found for type `str`
+   --> yoke-derive-0.8.3/src/lib.rs:202:32
+```
+
+つまり**移植性の問題ではなく、パッケージの Rust が現行の crate 生態系に
+追いついていない**という別種の壁。`libhimmelblau` を DragonFly で動かすには、
+rust を自前で新しく入れるか、上流の更新を待つことになる。
+
+**収穫: 素の `libkrimes` が実機の DragonFly でも `E0425` で落ちることを確認した。**
+cross での再現より強い証拠になる（`patches/README.md` の表を更新済み）。
+
+なお image の root は 1750M しかなく、`rust` が依存込みで 1 GiB 要るため入らない。
+`runvm.sh` の `EXTRAARGS` で作業用ディスクを足し、`/usr/local` をそこへ移して回避した。
 
 ### cross では答えの出ない問いがある（2026-09-17）
 
