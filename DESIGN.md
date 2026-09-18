@@ -571,6 +571,68 @@ DESIGN.md に「NetBSD と OpenBSD は LibreSSL」と書いていたが、**こ�
 OpenBSD が LibreSSL 4.4 へ進み、`openssl-sys` が追随する前だと落ちる。
 ここは追いかける必要がある。
 
+### libhimmelblau を pkgsrc パッケージにした（2026-09-18）
+
+実機（NetBSD 11.0 amd64）で `/usr/pkgsrc/zakinko/libhimmelblau` を起こし、
+白紙から 23 分で通るところまで確かめた。`pkglint` は Looks fine。
+
+**なぜ pkgsrc が筋の良い相手だったか。** `libhimmelblau` は Rust のライブラリ
+だが `crate-type = ["rlib", "cdylib"]` を持ち、`cargo cbuild`（cargo-c）で
+**C の共有ライブラリとして**出る。cbindgen が C ヘッダを生成し、pkg-config
+ファイルも付く。Rust からしか使えない物なら pkgsrc に入れる意味は薄いが、
+これは言語を問わずリンクできる。
+
+| 確かめたこと | 結果 |
+|---|---|
+| 白紙からのビルド | 23 分、`make: 0` |
+| 成果物 | `.so` 17MB / `.a` 71MB / ヘッダ 72KB / `.pc` |
+| バイナリパッケージ | 23MB、6 ファイル |
+| **C からリンクして実行** | **通った**（`ldd`: `-lhimmelblau.0 => /usr/pkg/lib/libhimmelblau.so.0`） |
+
+**副産物: `libhimmelblau` が NetBSD 11.0 実機で建つことが確定した。**
+「cross では原理的に検証できない、実機が要る」としていた項目の一つ。
+
+### 当て物を pkgsrc の中で運べる
+
+`libkrimes` の当て物は、`patches/` では当たらない。crate は WRKSRC ではなく
+`${WRKDIR}/vendor/` に展開されるため。`pre-configure` で当てれば通る。
+
+```make
+pre-configure:
+	cd ${CARGO_VENDOR_DIR}/${LIBKRIMES} &&				\
+	${PATCH} -f -p0 < ${FILESDIR}/libkrimes-bsd-getdomainname.patch
+```
+
+**成立の根拠**は `cargo.mk` が書く `.cargo-checksum.json` が
+`{"package":"...","files":{}}` と個別ファイルのハッシュを持たないこと。
+vendor した crate を書き換えても cargo は拒まない。
+
+これで**上流が当て物を取るかどうかと独立に、一箇所で抱えたまま配れる**。
+
+### 「全 OS を pkgsrc ベースに」の評価
+
+`mk/platform` は AIX Cygwin Darwin DragonFly FreeBSD FreeMiNT HPUX Haiku IRIX
+**Linux** MidnightBSD Minix NetBSD OSF1 OpenBSD QNX SCO_SV SunOS UnixWare を
+持つ。**本プロジェクトの 12 標的が全部入っている。**
+
+得られるもの:
+
+- パッケージ形式の分裂（rpm×3 / deb×3 / apk / ports×2 / pkgsrc / dports）が 1 つになる
+- 当て物を一箇所で抱えられる
+- **pkgsrc 自身の `lang/rust` を使うので、OS が配る rust の版に左右されない。**
+  DragonFly で `libhimmelblau` が建たなかったのは配布 rust が 1.85 と古いため
+  だったが、pkgsrc 経由なら起きない
+
+代償:
+
+- **Linux で一台ずつ bootstrap するのは重すぎる。** ただし (OS, arch) ごとに
+  一度ビルドしてバイナリパッケージを配れば実用になる。署名した成果物を配る
+  という本プロジェクトの設計とも相性が良い
+- pkgsrc は `/usr/pkg` 配下に入れる。Linux の常駐デーモンは `/usr/sbin` と
+  `/usr/lib/systemd` を期待するので、そこは OS ごとの結合部として残る
+- **回復環境は対象外。** 自己完結した initramfs なのでパッケージにする必要がない。
+  pkgsrc が効くのはエージェント側
+
 ### DragonFly 実機での結果（2026-09-18）— 前言を二つ訂正
 
 `zakinko/netbsd-ci-images` の image で実機の DragonFly 6.4.2-RELEASE を立て、

@@ -41,7 +41,7 @@ diff が名指しする platform は `freebsd` `dragonfly` `netbsd` `openbsd` �
 |---|---|---|---|---|
 | FreeBSD aarch64 | `E0425` | 建つ | **通った** | 実機 15.1-RELEASE-p3 |
 | FreeBSD x86_64 | — | 建つ | — | cross（rustup の std） |
-| NetBSD x86_64 | `E0425` | 建つ | — | cross（rustup の std） |
+| NetBSD x86_64 | `E0425` | **建つ（実機）** | — | cross ＋ **実機 NetBSD 11.0 amd64** |
 | DragonFly x86_64 | **`E0425`（実機でも確認）** | 建つ | — | cross（`-Z build-std`）＋ 実機 6.4.2-RELEASE |
 | OpenBSD x86_64 | `E0425` | 建つ | — | cross（`-Z build-std`） |
 | macOS aarch64 | （既存の枝） | — | **通った** | 実機 |
@@ -62,6 +62,17 @@ NetBSD・DragonFly・OpenBSD で走らせていないのは、それらが選ぶ
 走っている枝と同じものだから。OS ごとに違うのは libc の宣言のほうで、
 そちらはコンパイル時に照合される。**とはいえ「建った」と「走った」は別の
 検査なので、表では分けてある。**
+
+### NetBSD は実機で、pkgsrc の中から確かめた（2026-09-18）
+
+実機（NetBSD 11.0 amd64）で `/usr/pkgsrc/zakinko/libhimmelblau` を起こし、
+この当て物を `pre-configure` で当てて `libhimmelblau` 0.8.41 まで建てた。
+`Hunk #1 succeeded at 125.` を確認し、出来た `.so` に C からリンクして
+実行するところまで通っている。
+
+crate は WRKSRC ではなく `${WRKDIR}/vendor/` に展開されるので `patches/` では
+当たらない。`cargo.mk` の書く `.cargo-checksum.json` が個別ファイルのハッシュを
+持たないため、vendor した crate を書き換えても cargo は拒まない。
 
 ### DragonFly は実機でも確かめた（2026-09-18）
 
