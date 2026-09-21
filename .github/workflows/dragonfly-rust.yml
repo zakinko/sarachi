@@ -1,0 +1,57 @@
+# DragonFly の rust を自前で建てるための下調べ。
+#
+# Entra 認証に要る libhimmelblau は rustc 1.88 を要る。DPorts が配るのは
+# 1.85.1 で、2025-04-05 から動いていない。上流に新しいものも無い——DPorts の
+# Makefile.DragonFly が指している leaf.dragonflybsd.org の bootstrap は
+# 1.84.1 が最後で、2025-04 で止まっている。tier 3 なので rust 本家も binary を
+# 出さない。つまり誰かが建てるしかなく、それが我々になる。
+#
+# 1.88 で足りることは測ってある。1.87 では scraper 0.27.0 の let-chains が
+# 通らず、1.88 で libhimmelblau が建った。rustc は一つ前の版でしか建たない
+# 決まりなので、1.85.1 を種に 1.86 1.87 1.88 と三段積むことになる。
+#
+# その前にここで器を測る。rustc の build は disk を 20GB 以上要るが、
+# vmactions は memory しか指定させず disk は image 任せで、足りるかどうかが
+# 分からない。足りなければ CI ではなく実機に移すことになる。
+# 建てる workflow を書くのは、この答えが出てからにする。
+name: dragonfly-rust-probe
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: runner 側の空き
+        run: df -h / /mnt
+
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          release: '6.4.2'
+          usesh: true
+          # 種にする rust。ここで入るものが chain の出発点になる。
+          prepare: pkg install -y rust
+          run: |
+            set -e
+            echo "=== 種にする rust ==="
+            rustc --version
+            cargo --version
+            echo
+            echo "=== C の道具 ==="
+            cc --version | head -1
+            echo
+            echo "=== 資源 ==="
+            sysctl hw.ncpu hw.physmem hw.usermem
+            echo
+            echo "=== disk ==="
+            df -h
+            echo
+            echo "=== swap ==="
+            swapinfo -h || echo "swap 無し"
