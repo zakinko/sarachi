@@ -146,6 +146,32 @@ echo "  sha256 一致"
 tar xf "$SRC"
 cd "rustc-${VERSION}-src"
 
+say "-fPIC を付ける cc の包みを作る"
+# DragonFly は既定で PIE を作るが、-sys crate が建てる C の source には
+# -fPIC が付かない。cargo の link で libssh2-sys がこうなる。
+#
+#   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
+#     .rodata.str1.1 can not be used when making a PIE object
+#
+# 環境変数では届かなかった。素の CFLAGS は bootstrap が立てる
+# CFLAGS_<triple を下線にした物> に負け、その名前で渡しても tool
+# （cargo）を建てる経路では効かなかった。config.toml の [target.*] に
+# cflags という項目は無い。
+#
+# cc 自体を包めば、どの経路から呼ばれても付く。cc と cxx は [target.*] が
+# 受け付ける項目なので、そこから指す。
+mkdir -p "$WRK/bin"
+cat > "$WRK/bin/cc" <<'WRAP'
+#!/bin/sh
+exec /usr/bin/cc -fPIC "$@"
+WRAP
+cat > "$WRK/bin/c++" <<'WRAP'
+#!/bin/sh
+exec /usr/bin/c++ -fPIC "$@"
+WRAP
+chmod +x "$WRK/bin/cc" "$WRK/bin/c++"
+"$WRK/bin/cc" --version | head -1 | sed 's/^/  /'
+
 say "config.toml を書く"
 # この heredoc は変数を展開させるので引用していない。つまり中身は shell に
 # 読まれる。backtick を書くと command substitution として実行され、comment の
@@ -200,6 +226,8 @@ debug-assertions = false
 
 [target.${TRIPLE}]
 llvm-config = "${LLVM_CONFIG}"
+cc = "${WRK}/bin/cc"
+cxx = "${WRK}/bin/c++"
 CONF
 cat config.toml | sed 's/^/  /'
 
