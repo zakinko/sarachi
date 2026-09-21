@@ -8,10 +8,10 @@
 use crate::fetch;
 use anyhow::{Context, Result, bail};
 use sarachi_image::VerifyingKey;
+use sarachi_image::{SignedManifest, verify_and_write};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use sarachi_image::{SignedManifest, verify_and_write};
 
 /// マニフェストの上限。これを超えるものはマニフェストではない。
 const MANIFEST_LIMIT: usize = 4 * 1024 * 1024;
@@ -32,7 +32,10 @@ pub fn load_key(path: &Path) -> Result<VerifyingKey> {
     let raw: [u8; 32] = if b.len() == 32 {
         b.try_into().unwrap()
     } else {
-        let t: String = String::from_utf8_lossy(&b).chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        let t: String = String::from_utf8_lossy(&b)
+            .chars()
+            .filter(|c| c.is_ascii_hexdigit())
+            .collect();
         if t.len() != 64 {
             bail!("公開鍵の形式が分からない（32 バイトか 16 進 64 文字）");
         }
@@ -60,12 +63,18 @@ pub fn run(plan: &Plan, trusted: &VerifyingKey) -> Result<()> {
 
     let signed = SignedManifest::decode(&raw)?;
     // ここを通らないマニフェストは使わない。
-    let m = signed.verify(trusted).context("マニフェストの署名検証に失敗")?;
+    let m = signed
+        .verify(trusted)
+        .context("マニフェストの署名検証に失敗")?;
 
     println!("  署名: 検証を通った");
     println!("  名前: {}", m.name);
-    println!("  大きさ: {} MiB（{} チャンク x {} MiB）",
-             m.total_size / 1024 / 1024, m.chunks.len(), m.chunk_size / 1024 / 1024);
+    println!(
+        "  大きさ: {} MiB（{} チャンク x {} MiB）",
+        m.total_size / 1024 / 1024,
+        m.chunks.len(),
+        m.chunk_size / 1024 / 1024
+    );
 
     if plan.resume_from > 0 {
         println!("  チャンク {} から再開", plan.resume_from);

@@ -17,7 +17,6 @@ pub struct Fetched {
     pub reader: Box<dyn Read + Send>,
     /// サーバが Range を受け入れたか。受け入れていなければ先頭から来ている。
     pub ranged: bool,
-    pub content_length: Option<u64>,
 }
 
 /// `offset` バイト目から取得する。0 を渡せば全体。
@@ -30,21 +29,20 @@ pub fn get_from(url: &str, offset: u64) -> Result<Fetched> {
     if offset > 0 {
         req = req.set("Range", &format!("bytes={offset}-"));
     }
-    let resp = req.call().with_context(|| format!("{url} を取得できない"))?;
+    let resp = req
+        .call()
+        .with_context(|| format!("{url} を取得できない"))?;
 
     let status = resp.status();
     let ranged = status == 206;
     if offset > 0 && !ranged && status != 200 {
         bail!("{url}: 予期しない応答 {status}");
     }
-    let content_length = resp
-        .header("Content-Length")
-        .and_then(|v| v.parse::<u64>().ok());
-
+    // Content-Length は読んでいない。どれだけ書くかは manifest の総サイズが
+    // 決めるので、サーバの申告を信じる必要がない。
     Ok(Fetched {
         reader: resp.into_reader(),
         ranged,
-        content_length,
     })
 }
 

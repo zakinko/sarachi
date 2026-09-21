@@ -107,7 +107,10 @@ impl SignedManifest {
     /// **これを通っていないマニフェストを使ってはいけない。**
     pub fn verify(&self, trusted: &VerifyingKey) -> Result<&Manifest> {
         let sig = Signature::from_bytes(&self.signature);
-        if trusted.verify(&self.manifest.to_canonical_bytes(), &sig).is_err() {
+        if trusted
+            .verify(&self.manifest.to_canonical_bytes(), &sig)
+            .is_err()
+        {
             bail!("マニフェストの署名が一致しない");
         }
         // 自己矛盾したマニフェストは、署名が通っていても受けない。
@@ -116,7 +119,8 @@ impl SignedManifest {
         if self.manifest.chunks.len() != expect {
             bail!(
                 "チャンク数が総サイズと合わない（{} 個あるが {} 個のはず）",
-                self.manifest.chunks.len(), expect
+                self.manifest.chunks.len(),
+                expect
             );
         }
         Ok(&self.manifest)
@@ -145,15 +149,27 @@ pub fn verify_and_write<R: Read, W: Write>(
     from_chunk: usize,
 ) -> Result<Stats> {
     if from_chunk > manifest.chunks.len() {
-        bail!("再開位置 {} がチャンク数 {} を越えている", from_chunk, manifest.chunks.len());
+        bail!(
+            "再開位置 {} がチャンク数 {} を越えている",
+            from_chunk,
+            manifest.chunks.len()
+        );
     }
-    let mut stats = Stats { chunks_skipped: from_chunk, ..Default::default() };
+    let mut stats = Stats {
+        chunks_skipped: from_chunk,
+        ..Default::default()
+    };
     let mut buf = vec![0u8; manifest.chunk_size as usize];
 
     for index in from_chunk..manifest.chunks.len() {
         let want = manifest.chunk_len(index) as usize;
         src.read_exact(&mut buf[..want]).map_err(|e| {
-            anyhow::anyhow!("チャンク {} を読めない（{} バイト要る）: {}", index, want, e)
+            anyhow::anyhow!(
+                "チャンク {} を読めない（{} バイト要る）: {}",
+                index,
+                want,
+                e
+            )
         })?;
 
         let mut h = Sha256::new();
@@ -165,7 +181,9 @@ pub fn verify_and_write<R: Read, W: Write>(
         if got != manifest.chunks[index] {
             bail!(
                 "チャンク {} のハッシュが一致しない。書かずに中止した\n  期待 {}\n  実際 {}",
-                index, hex(&manifest.chunks[index]), hex(&got)
+                index,
+                hex(&manifest.chunks[index]),
+                hex(&got)
             );
         }
 
@@ -201,7 +219,10 @@ mod tests {
     fn signed(name: &str, data: &[u8], k: &SigningKey) -> SignedManifest {
         let m = Manifest::build(name, data, CHUNK).unwrap();
         let sig = k.sign(&m.to_canonical_bytes());
-        SignedManifest { manifest: m, signature: sig.to_bytes() }
+        SignedManifest {
+            manifest: m,
+            signature: sig.to_bytes(),
+        }
     }
 
     #[test]
@@ -238,8 +259,11 @@ mod tests {
 
         // 書かれたのは検証を通った前半だけで、壊れたチャンクは 1 バイトも
         // 出ていないこと。
-        assert_eq!(out.len(), bad_index * CHUNK as usize,
-                   "壊れたチャンクのバイトが書き出されている");
+        assert_eq!(
+            out.len(),
+            bad_index * CHUNK as usize,
+            "壊れたチャンクのバイトが書き出されている"
+        );
         assert_eq!(out, &data[..bad_index * CHUNK as usize]);
     }
 
@@ -302,7 +326,10 @@ mod tests {
         let mut m = Manifest::build("x.img", &data, CHUNK).unwrap();
         m.chunks.pop();
         let sig = k.sign(&m.to_canonical_bytes());
-        let sm = SignedManifest { manifest: m, signature: sig.to_bytes() };
+        let sm = SignedManifest {
+            manifest: m,
+            signature: sig.to_bytes(),
+        };
         let err = sm.verify(&k.verifying_key()).unwrap_err();
         assert!(err.to_string().contains("チャンク数"), "{err}");
     }

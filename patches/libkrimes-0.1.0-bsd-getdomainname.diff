@@ -1,5 +1,19 @@
---- /home/zakinko.guest/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libkrimes-0.1.0/src/cldap.rs	2006-07-24 10:21:28.000000000 +0900
-+++ /home/zakinko.guest/libkrimes-patch/libkrimes/src/cldap.rs	2026-09-17 00:48:12.251553000 +0900
+Bind res on the BSDs as well.
+
+get_domainname() binds res only under cfg(target_os = "macos") and
+cfg(target_os = "linux"), so on any other target the following
+"if res == -1" refers to a value that was never bound:
+
+  error[E0425]: cannot find value `res` in this scope
+
+The second argument differs by platform, and the libc crate already
+groups them the way this patch does: unix/bsd/freebsdlike declares
+c_int, as unix/bsd/apple does, and unix/bsd/netbsdlike declares size_t,
+as unix/linux_like does.  So the BSDs can join the two existing arms
+and no new arm is needed.
+
+--- src/cldap.rs.orig
++++ src/cldap.rs
 @@ -125,9 +125,9 @@
          let ptr = buf.as_mut_ptr().cast();
          let len = buf.capacity();

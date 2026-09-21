@@ -108,7 +108,11 @@ pub fn write_gpt<W: Write + Seek>(layout: &Layout, w: &mut W) -> Result<()> {
         if p.first_lba < first_usable || p.last_lba > last_usable {
             bail!(
                 "{:?} ({}..{}) が使用可能範囲 {}..{} の外にある",
-                p.role, p.first_lba, p.last_lba, first_usable, last_usable
+                p.role,
+                p.first_lba,
+                p.last_lba,
+                first_usable,
+                last_usable
             );
         }
     }
@@ -125,8 +129,15 @@ pub fn write_gpt<W: Write + Seek>(layout: &Layout, w: &mut W) -> Result<()> {
     w.write_all(&protective_mbr(total))?;
 
     // LBA 1: 主ヘッダ
-    let ph = header(layout, 1, backup_header_lba, primary_entry_lba,
-                    first_usable, last_usable, ecrc);
+    let ph = header(
+        layout,
+        1,
+        backup_header_lba,
+        primary_entry_lba,
+        first_usable,
+        last_usable,
+        ecrc,
+    );
     w.seek(SeekFrom::Start(ss))?;
     w.write_all(&ph)?;
     w.write_all(&vec![0u8; (ss as usize) - ph.len()])?;
@@ -140,8 +151,15 @@ pub fn write_gpt<W: Write + Seek>(layout: &Layout, w: &mut W) -> Result<()> {
     w.write_all(&entries)?;
 
     // 最終 LBA: 予備ヘッダ。my/alternate と entry_lba が主と入れ替わる。
-    let bh = header(layout, backup_header_lba, 1, backup_entry_lba,
-                    first_usable, last_usable, ecrc);
+    let bh = header(
+        layout,
+        backup_header_lba,
+        1,
+        backup_entry_lba,
+        first_usable,
+        last_usable,
+        ecrc,
+    );
     w.seek(SeekFrom::Start(backup_header_lba * ss))?;
     w.write_all(&bh)?;
     w.write_all(&vec![0u8; (ss as usize) - bh.len()])?;
@@ -172,8 +190,10 @@ mod tests {
         assert_eq!(img[511], 0xAA);
         assert_eq!(img[446 + 4], 0xEE, "種別が GPT protective でない");
         // 64GiB は 512B セクタで 134,217,728 セクタ。32bit に収まるので実値が入る。
-        assert_eq!(u32::from_le_bytes(img[458..462].try_into().unwrap()),
-                   (64 * GIB / 512 - 1) as u32);
+        assert_eq!(
+            u32::from_le_bytes(img[458..462].try_into().unwrap()),
+            (64 * GIB / 512 - 1) as u32
+        );
     }
 
     #[test]
@@ -182,7 +202,10 @@ mod tests {
         // 道具から見たディスクの大きさが巻き戻り、末尾が空きに見えてしまう。
         let l = Layout::plan(4 * 1024 * GIB, 512).unwrap();
         let mbr = protective_mbr(l.total_sectors);
-        assert_eq!(u32::from_le_bytes(mbr[458..462].try_into().unwrap()), u32::MAX);
+        assert_eq!(
+            u32::from_le_bytes(mbr[458..462].try_into().unwrap()),
+            u32::MAX
+        );
     }
 
     #[test]
@@ -204,9 +227,15 @@ mod tests {
         let last = (l.total_sectors - 1) as usize * ss;
         let bh = &img[last..last + 92];
         assert_eq!(&bh[0..8], SIGNATURE);
-        assert_eq!(u64::from_le_bytes(bh[24..32].try_into().unwrap()), l.total_sectors - 1);
-        assert_eq!(u64::from_le_bytes(bh[32..40].try_into().unwrap()), 1,
-                   "予備の alternate は主ヘッダを指すはず");
+        assert_eq!(
+            u64::from_le_bytes(bh[24..32].try_into().unwrap()),
+            l.total_sectors - 1
+        );
+        assert_eq!(
+            u64::from_le_bytes(bh[32..40].try_into().unwrap()),
+            1,
+            "予備の alternate は主ヘッダを指すはず"
+        );
     }
 
     #[test]
@@ -217,8 +246,14 @@ mod tests {
             let o = base + ((p.index - 1) * ENTRY_SIZE) as usize;
             assert_eq!(&img[o..o + 16], p.type_guid.to_bytes_le());
             assert_eq!(&img[o + 16..o + 32], p.unique_guid.to_bytes_le());
-            assert_eq!(u64::from_le_bytes(img[o + 32..o + 40].try_into().unwrap()), p.first_lba);
-            assert_eq!(u64::from_le_bytes(img[o + 40..o + 48].try_into().unwrap()), p.last_lba);
+            assert_eq!(
+                u64::from_le_bytes(img[o + 32..o + 40].try_into().unwrap()),
+                p.first_lba
+            );
+            assert_eq!(
+                u64::from_le_bytes(img[o + 40..o + 48].try_into().unwrap()),
+                p.last_lba
+            );
         }
     }
 
@@ -240,7 +275,10 @@ mod tests {
         assert_eq!(&h[0..8], SIGNATURE);
         // 4096B ではエントリ配列が 4 セクタで済むので、使用可能域が前に出る。
         assert_eq!(u64::from_le_bytes(h[40..48].try_into().unwrap()), 6);
-        assert_eq!(u64::from_le_bytes(h[48..56].try_into().unwrap()), l.total_sectors - 6);
+        assert_eq!(
+            u64::from_le_bytes(h[48..56].try_into().unwrap()),
+            l.total_sectors - 6
+        );
     }
 
     #[test]

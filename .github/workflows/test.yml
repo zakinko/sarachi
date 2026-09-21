@@ -1,0 +1,41 @@
+# 安い側。Linux の標準 runner で毎回回す。
+#
+# paths を on: の下に置くのは、runner が起きる前に評価されるので費用が
+# かからないため。job の if: で切ると、その job 自身の起動分は課金される。
+name: test
+
+on:
+  push:
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/test.yml'
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/test.yml'
+  workflow_dispatch:
+
+# 同じ branch へ続けて push したときに、古い方を止める。
+# これが無いと一分間に三回 push すれば三回ぶん払う。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      # 書式と lint と試験を一つの job にまとめる。別々にすると
+      # それぞれが runner の起動分を払い、しかも一分未満でも一分に切り上がる。
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace

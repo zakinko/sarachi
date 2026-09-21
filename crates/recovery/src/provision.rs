@@ -16,10 +16,10 @@
 
 use crate::{crypt, fetch, wipe};
 use anyhow::{Context, Result, bail};
-use std::fs::OpenOptions;
-use std::path::Path;
 use sarachi_disk::{Layout, Partition, Role, write_gpt};
 use sarachi_image::{Manifest, SignedManifest, VerifyingKey, verify_and_write};
+use std::fs::OpenOptions;
+use std::path::Path;
 
 const MAPPER_NAME: &str = "sarachi-root";
 const MANIFEST_LIMIT: usize = 4 * 1024 * 1024;
@@ -116,7 +116,11 @@ pub fn run(plan: &Plan, trusted: &VerifyingKey) -> Result<()> {
             m.total_size / 1024 / 1024,
             m.chunks.len()
         );
-        pieces.push(Piece { name: name.to_string(), manifest: m, role });
+        pieces.push(Piece {
+            name: name.to_string(),
+            manifest: m,
+            role,
+        });
     }
 
     if !plan.commit {
@@ -160,7 +164,10 @@ pub fn run(plan: &Plan, trusted: &VerifyingKey) -> Result<()> {
     crypt::format(&root_dev, &key)?;
     std::fs::write(plan.key_out, &key)
         .with_context(|| format!("鍵を {} に書けない", plan.key_out.display()))?;
-    println!("   鍵を {} に置いた（本番では TPM か control plane へ）", plan.key_out.display());
+    println!(
+        "   鍵を {} に置いた（本番では TPM か control plane へ）",
+        plan.key_out.display()
+    );
     if plan.print_key {
         println!(
             "   [試験用] 鍵: {}",
@@ -206,5 +213,8 @@ fn settle(dev: &Path) -> Result<()> {
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    bail!("{} が現れない。パーティション表の再読み込みが効いていない", dev.display())
+    bail!(
+        "{} が現れない。パーティション表の再読み込みが効いていない",
+        dev.display()
+    )
 }

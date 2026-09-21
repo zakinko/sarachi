@@ -6,8 +6,8 @@
 
 use anyhow::{Context, Result, bail};
 use ed25519_dalek::{Signer, SigningKey};
-use std::fs;
 use sarachi_image::{DEFAULT_CHUNK, Manifest, SignedManifest};
+use std::fs;
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
@@ -48,17 +48,27 @@ fn main() -> Result<()> {
             let (Some(image), Some(keyfile)) = (args.get(1), args.get(2)) else {
                 bail!("使い方: sign <image> <signing.key> [out.manifest]");
             };
-            let out = args.get(3).cloned().unwrap_or_else(|| format!("{image}.manifest"));
+            let out = args
+                .get(3)
+                .cloned()
+                .unwrap_or_else(|| format!("{image}.manifest"));
             let k = SigningKey::from_bytes(&unhex(&fs::read_to_string(keyfile)?)?);
 
             let data = fs::read(image).with_context(|| format!("{image} を読めない"))?;
             let m = Manifest::build(image, &data, DEFAULT_CHUNK)?;
             let sig = k.sign(&m.to_canonical_bytes());
-            let sm = SignedManifest { manifest: m, signature: sig.to_bytes() };
+            let sm = SignedManifest {
+                manifest: m,
+                signature: sig.to_bytes(),
+            };
             fs::write(&out, sm.encode())?;
 
-            println!("{} に署名した（{} バイト / {} チャンク）",
-                     image, data.len(), sm.manifest.chunks.len());
+            println!(
+                "{} に署名した（{} バイト / {} チャンク）",
+                image,
+                data.len(),
+                sm.manifest.chunks.len()
+            );
             println!("  → {out}");
         }
 

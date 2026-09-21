@@ -1,0 +1,93 @@
+# 高い側。vmactions は起動と導入で八分から十二分かかるので、
+# 既定 branch への push と、手動と、週一の定期だけに絞る。
+# PR の push ごとには回さない。
+#
+# OS ごとに job を分けているのは、どの BSD で落ちたかが要るため。
+# shell の loop に畳むと、一つ落ちた時点で残りが分からなくなる。
+# GhostBSD は FreeBSD 派生で得られる情報が重なるので、今は入れていない。
+name: bsd
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'patches/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/bsd.yml'
+  workflow_dispatch:
+  # 上流の crate と OS の package が動くので、こちらが何も変えなくても壊れる。
+  # 壊れたことを次に触る人が踏むのが一番まずいので、週に一度は回す。
+  schedule:
+    - cron: '0 3 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # OpenBSD が本命。base が LibreSSL 4.3.0 で、openssl-sys 0.9.117 の
+  # 対応上端にちょうど載っている。ここが通るかは cross では分からない。
+  openbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          release: '7.9'
+          usesh: true
+          prepare: pkg_add -I rust
+          run: |
+            set -e
+            rustc --version
+            openssl version || true
+            cargo test --workspace
+            sh ci/libkrimes-check.sh
+
+  netbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          release: '11.0'
+          usesh: true
+          prepare: /usr/sbin/pkg_add rust
+          run: |
+            set -e
+            rustc --version
+            cargo test --workspace
+            sh ci/libkrimes-check.sh
+
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: '15.1'
+          usesh: true
+          prepare: pkg install -y rust
+          run: |
+            set -e
+            rustc --version
+            cargo test --workspace
+            sh ci/libkrimes-check.sh
+
+  # DragonFly が配る rust は 1.85 と古く、現行の crate 生態系に追いつかない
+  # ことを実機で確かめてある。ここで見たいのは当て物が効くかだけなので、
+  # libhimmelblau までは建てない。
+  dragonfly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          release: '6.4.2'
+          usesh: true
+          prepare: pkg install -y rust
+          run: |
+            set -e
+            rustc --version
+            sh ci/libkrimes-check.sh

@@ -8,8 +8,8 @@
 //! 走って取り返しがつかなくなる余地を残すべきではない。
 
 use anyhow::{Context, Result, bail};
-use std::fs::OpenOptions;
 use sarachi_disk::{Layout, write_gpt};
+use std::fs::OpenOptions;
 
 mod block;
 mod crypt;
@@ -52,7 +52,9 @@ fn find(name: &str) -> Result<block::Disk> {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let Some(cmd) = args.first().map(String::as_str) else { usage() };
+    let Some(cmd) = args.first().map(String::as_str) else {
+        usage()
+    };
 
     match cmd {
         "list" => {
@@ -108,7 +110,10 @@ fn main() -> Result<()> {
         "install" => {
             let dev = args.get(1).unwrap_or_else(|| usage());
             let opt = |name: &str| -> Option<String> {
-                args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+                args.iter()
+                    .position(|a| a == name)
+                    .and_then(|i| args.get(i + 1))
+                    .cloned()
             };
             let (Some(manifest_url), Some(image_url), Some(key_path)) =
                 (opt("--manifest"), opt("--image"), opt("--key"))
@@ -133,8 +138,11 @@ fn main() -> Result<()> {
 
         "wipe" => {
             let dev = args.get(1).unwrap_or_else(|| usage());
-            let level = match args.iter().position(|a| a == "--level")
-                .and_then(|i| args.get(i + 1)).map(String::as_str)
+            let level = match args
+                .iter()
+                .position(|a| a == "--level")
+                .and_then(|i| args.get(i + 1))
+                .map(String::as_str)
             {
                 Some("reset") => sarachi_order::Level::Reset,
                 Some("factory") => sarachi_order::Level::Factory,
@@ -147,18 +155,31 @@ fn main() -> Result<()> {
             let d = find(dev)?;
             println!("{}\n", d.describe());
             if d.removable && args.iter().any(|a| a == "--commit") {
-                bail!("{} は取り外し可能な媒体に見える。作業用の USB を消しかねないので断る", d.name);
+                bail!(
+                    "{} は取り外し可能な媒体に見える。作業用の USB を消しかねないので断る",
+                    d.name
+                );
             }
-            wipe::run(&d.path, d.size_bytes, d.logical_sector_size, level,
-                      args.iter().any(|a| a == "--commit"))?;
+            wipe::run(
+                &d.path,
+                d.size_bytes,
+                d.logical_sector_size,
+                level,
+                args.iter().any(|a| a == "--commit"),
+            )?;
         }
 
         "provision" => {
             let dev = args.get(1).unwrap_or_else(|| usage());
             let opt = |name: &str| -> Option<String> {
-                args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+                args.iter()
+                    .position(|a| a == name)
+                    .and_then(|i| args.get(i + 1))
+                    .cloned()
             };
-            let (Some(base), Some(key_path)) = (opt("--base"), opt("--key")) else { usage() };
+            let (Some(base), Some(key_path)) = (opt("--base"), opt("--key")) else {
+                usage()
+            };
             let rootfs = opt("--rootfs").unwrap_or_else(|| "rootfs".into());
             let esp = opt("--esp");
             let recovery = opt("--recovery");

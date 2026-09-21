@@ -60,7 +60,12 @@ pub fn decode(b: &[u8]) -> Result<Manifest> {
     if i != b.len() {
         bail!("末尾に余分なバイトがある（{} バイト）", b.len() - i);
     }
-    Ok(Manifest { name, total_size, chunk_size, chunks })
+    Ok(Manifest {
+        name,
+        total_size,
+        chunk_size,
+        chunks,
+    })
 }
 
 #[cfg(test)]
@@ -68,7 +73,7 @@ mod tests {
     use super::*;
 
     fn sample() -> Manifest {
-        Manifest::build("alpine-aarch64-minimum.img", &vec![7u8; 100], 32).unwrap()
+        Manifest::build("alpine-aarch64-minimum.img", &[7u8; 100], 32).unwrap()
     }
 
     #[test]

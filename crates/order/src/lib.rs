@@ -86,7 +86,10 @@ impl Order {
 
     pub fn sign(self, key: &SigningKey) -> SignedOrder {
         let sig = key.sign(&self.to_canonical_bytes());
-        SignedOrder { order: self, signature: sig.to_bytes() }
+        SignedOrder {
+            order: self,
+            signature: sig.to_bytes(),
+        }
     }
 }
 
@@ -110,12 +113,15 @@ impl std::fmt::Display for Reject {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Reject::BadSignature => write!(f, "署名が一致しない"),
-            Reject::Expired { now, expires_at } =>
-                write!(f, "期限切れ（現在 {now}、期限 {expires_at}）"),
-            Reject::NotYetValid { now, issued_at } =>
-                write!(f, "発行時刻が未来（現在 {now}、発行 {issued_at}）"),
-            Reject::WrongDevice { expected, got } =>
-                write!(f, "宛先が違う（自分は {expected}、命令は {got}）"),
+            Reject::Expired { now, expires_at } => {
+                write!(f, "期限切れ（現在 {now}、期限 {expires_at}）")
+            }
+            Reject::NotYetValid { now, issued_at } => {
+                write!(f, "発行時刻が未来（現在 {now}、発行 {issued_at}）")
+            }
+            Reject::WrongDevice { expected, got } => {
+                write!(f, "宛先が違う（自分は {expected}、命令は {got}）")
+            }
             Reject::ReplayedNonce => write!(f, "使用済みの nonce"),
         }
     }
@@ -147,12 +153,18 @@ impl SignedOrder {
             .map_err(|_| Reject::BadSignature)?;
 
         if now > self.order.expires_at {
-            return Err(Reject::Expired { now, expires_at: self.order.expires_at });
+            return Err(Reject::Expired {
+                now,
+                expires_at: self.order.expires_at,
+            });
         }
         // 発行時刻が未来の命令は、時計のずれか細工のどちらか。
         // どちらにせよ消去を始めてよい根拠にはならない。
         if now < self.order.issued_at {
-            return Err(Reject::NotYetValid { now, issued_at: self.order.issued_at });
+            return Err(Reject::NotYetValid {
+                now,
+                issued_at: self.order.issued_at,
+            });
         }
         if self.order.device_id != self_device_id {
             return Err(Reject::WrongDevice {
@@ -188,8 +200,12 @@ mod tests {
     #[derive(Default)]
     struct MemLog(HashSet<[u8; 16]>);
     impl NonceLog for MemLog {
-        fn seen(&self, n: &[u8; 16]) -> bool { self.0.contains(n) }
-        fn remember(&mut self, n: &[u8; 16]) { self.0.insert(*n); }
+        fn seen(&self, n: &[u8; 16]) -> bool {
+            self.0.contains(n)
+        }
+        fn remember(&mut self, n: &[u8; 16]) {
+            self.0.insert(*n);
+        }
     }
 
     const NOW: u64 = 1_789_000_500;
@@ -211,7 +227,11 @@ mod tests {
         let k = generate_key();
         let signed = order().sign(&k);
         let mut log = MemLog::default();
-        assert!(signed.verify(&k.verifying_key(), DEV, NOW, &mut log).is_ok());
+        assert!(
+            signed
+                .verify(&k.verifying_key(), DEV, NOW, &mut log)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -220,7 +240,9 @@ mod tests {
         let other = generate_key();
         let mut log = MemLog::default();
         assert_eq!(
-            signed.verify(&other.verifying_key(), DEV, NOW, &mut log).unwrap_err(),
+            signed
+                .verify(&other.verifying_key(), DEV, NOW, &mut log)
+                .unwrap_err(),
             Reject::BadSignature
         );
     }
@@ -233,7 +255,9 @@ mod tests {
         signed.order.level = Level::Reset;
         let mut log = MemLog::default();
         assert_eq!(
-            signed.verify(&k.verifying_key(), DEV, NOW, &mut log).unwrap_err(),
+            signed
+                .verify(&k.verifying_key(), DEV, NOW, &mut log)
+                .unwrap_err(),
             Reject::BadSignature
         );
     }
@@ -246,7 +270,8 @@ mod tests {
         b.signature = a.signature;
         let mut log = MemLog::default();
         assert_eq!(
-            b.verify(&k.verifying_key(), DEV, NOW, &mut log).unwrap_err(),
+            b.verify(&k.verifying_key(), DEV, NOW, &mut log)
+                .unwrap_err(),
             Reject::BadSignature
         );
     }
@@ -259,7 +284,9 @@ mod tests {
         let signed = o.sign(&k);
         let mut log = MemLog::default();
         assert!(matches!(
-            signed.verify(&k.verifying_key(), DEV, NOW, &mut log).unwrap_err(),
+            signed
+                .verify(&k.verifying_key(), DEV, NOW, &mut log)
+                .unwrap_err(),
             Reject::Expired { .. }
         ));
     }
@@ -273,7 +300,9 @@ mod tests {
         let signed = o.sign(&k);
         let mut log = MemLog::default();
         assert!(matches!(
-            signed.verify(&k.verifying_key(), DEV, NOW, &mut log).unwrap_err(),
+            signed
+                .verify(&k.verifying_key(), DEV, NOW, &mut log)
+                .unwrap_err(),
             Reject::NotYetValid { .. }
         ));
     }
@@ -284,7 +313,9 @@ mod tests {
         let signed = order().sign(&k);
         let mut log = MemLog::default();
         assert!(matches!(
-            signed.verify(&k.verifying_key(), "someone-else", NOW, &mut log).unwrap_err(),
+            signed
+                .verify(&k.verifying_key(), "someone-else", NOW, &mut log)
+                .unwrap_err(),
             Reject::WrongDevice { .. }
         ));
     }
@@ -296,9 +327,15 @@ mod tests {
         let k = generate_key();
         let signed = order().sign(&k);
         let mut log = MemLog::default();
-        assert!(signed.verify(&k.verifying_key(), DEV, NOW, &mut log).is_ok());
+        assert!(
+            signed
+                .verify(&k.verifying_key(), DEV, NOW, &mut log)
+                .is_ok()
+        );
         assert_eq!(
-            signed.verify(&k.verifying_key(), DEV, NOW, &mut log).unwrap_err(),
+            signed
+                .verify(&k.verifying_key(), DEV, NOW, &mut log)
+                .unwrap_err(),
             Reject::ReplayedNonce
         );
     }
@@ -327,6 +364,9 @@ mod tests {
 
         assert!(!Level::Reset.persists());
         assert!(!Level::Factory.persists(), "doWipe は電源断で回避できる");
-        assert!(Level::Destroy.persists(), "doWipeProtected は終わるまで続ける");
+        assert!(
+            Level::Destroy.persists(),
+            "doWipeProtected は終わるまで続ける"
+        );
     }
 }

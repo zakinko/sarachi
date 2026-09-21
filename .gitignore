@@ -2,3 +2,4 @@ target/
 *.img
 *.img.zst
 *.iso
+.ci-libkrimes/

@@ -21,7 +21,11 @@ const KEY_BYTES: usize = 64;
 /// は spawn 時に ENOENT を返す。その誤りは「cryptsetup が壊れている」ようにも
 /// 「ライブラリが足りない」ようにも読めるので、原因にたどり着くのに手間がかかる。
 fn cryptsetup_path() -> &'static str {
-    for p in ["/sbin/cryptsetup", "/usr/sbin/cryptsetup", "/bin/cryptsetup"] {
+    for p in [
+        "/sbin/cryptsetup",
+        "/usr/sbin/cryptsetup",
+        "/bin/cryptsetup",
+    ] {
         if Path::new(p).exists() {
             return p;
         }
@@ -78,13 +82,17 @@ pub fn format(device: &Path, key: &[u8]) -> Result<()> {
         "LUKS2 の作成",
         &[
             "luksFormat",
-            "--type", "luks2",
+            "--type",
+            "luks2",
             "--batch-mode",
-            "--pbkdf", "argon2id",
+            "--pbkdf",
+            "argon2id",
             // 回復環境の RAM は有限で、Pi では 2GB しかない。既定のまま
             // argon2id を回すと空きメモリの半分を取りにいって落ちうる。
-            "--pbkdf-memory", "65536",
-            "--key-file", "-",
+            "--pbkdf-memory",
+            "65536",
+            "--key-file",
+            "-",
             &dev,
         ],
         Some(key),
@@ -93,7 +101,11 @@ pub fn format(device: &Path, key: &[u8]) -> Result<()> {
 
 pub fn open(device: &Path, key: &[u8], name: &str) -> Result<()> {
     let dev = device.to_string_lossy().to_string();
-    run("LUKS の展開", &["open", "--key-file", "-", &dev, name], Some(key))
+    run(
+        "LUKS の展開",
+        &["open", "--key-file", "-", &dev, name],
+        Some(key),
+    )
 }
 
 pub fn close(name: &str) -> Result<()> {

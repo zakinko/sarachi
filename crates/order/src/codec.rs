@@ -40,7 +40,11 @@ struct Cur<'a> {
 impl<'a> Cur<'a> {
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         if self.i + n > self.b.len() {
-            bail!("入力が途中で終わっている（{} 要るが {} しかない）", n, self.b.len() - self.i);
+            bail!(
+                "入力が途中で終わっている（{} 要るが {} しかない）",
+                n,
+                self.b.len() - self.i
+            );
         }
         let s = &self.b[self.i..self.i + n];
         self.i += n;
@@ -81,7 +85,14 @@ pub fn decode(b: &[u8]) -> Result<Order> {
     if c.i != b.len() {
         bail!("末尾に余分なバイトがある（{} バイト）", b.len() - c.i);
     }
-    Ok(Order { device_id, level, nonce, issued_at, expires_at, issuer })
+    Ok(Order {
+        device_id,
+        level,
+        nonce,
+        issued_at,
+        expires_at,
+        issuer,
+    })
 }
 
 #[cfg(test)]

@@ -27,7 +27,11 @@ impl Disk {
             self.size_bytes / 1024 / 1024,
             self.logical_sector_size,
             if self.removable { "removable " } else { "" },
-            if self.rotational { "rotational " } else { "ssd " },
+            if self.rotational {
+                "rotational "
+            } else {
+                "ssd "
+            },
             self.model.as_deref().unwrap_or(""),
         )
     }

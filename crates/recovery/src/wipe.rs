@@ -8,11 +8,11 @@
 
 use crate::crypt;
 use anyhow::{Context, Result};
+use sarachi_disk::{Layout, Role};
+use sarachi_order::Level;
 use std::fs::OpenOptions;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use sarachi_disk::{Layout, Role};
-use sarachi_order::Level;
 
 /// パーティション名を作る。`/dev/sda` なら `/dev/sda3`、
 /// `/dev/nvme0n1` や `/dev/mmcblk0` なら `p` を挟む。
@@ -69,21 +69,49 @@ fn destroy_recovery(disk: &Path, layout: &Layout) -> Result<()> {
     Ok(())
 }
 
-pub fn run(disk: &Path, size_bytes: u64, sector_size: u64, level: Level, commit: bool) -> Result<Report> {
+pub fn run(
+    disk: &Path,
+    size_bytes: u64,
+    sector_size: u64,
+    level: Level,
+    commit: bool,
+) -> Result<Report> {
     let layout = Layout::plan(size_bytes, sector_size)?;
     let root = part_path(disk, layout.get(Role::Root).map(|p| p.index).unwrap_or(3));
 
     println!("段階   : {:?}", level);
-    println!("回復領域: {}", if level.keeps_recovery() { "残す" } else { "消す" });
-    println!("妨害耐性: {}", if level.persists() { "終わるまで再試行" } else { "中断されたら止まる" });
+    println!(
+        "回復領域: {}",
+        if level.keeps_recovery() {
+            "残す"
+        } else {
+            "消す"
+        }
+    );
+    println!(
+        "妨害耐性: {}",
+        if level.persists() {
+            "終わるまで再試行"
+        } else {
+            "中断されたら止まる"
+        }
+    );
     println!("対象    : {}", root.display());
 
     if !commit {
         println!("\ndry-run。実際に消すには --commit を付けること");
-        return Ok(Report { crypto_erased: false, gpt_destroyed: false, recovery_destroyed: false });
+        return Ok(Report {
+            crypto_erased: false,
+            gpt_destroyed: false,
+            recovery_destroyed: false,
+        });
     }
 
-    let mut r = Report { crypto_erased: false, gpt_destroyed: false, recovery_destroyed: false };
+    let mut r = Report {
+        crypto_erased: false,
+        gpt_destroyed: false,
+        recovery_destroyed: false,
+    };
 
     // 本体。鍵スロットを破棄すればマスター鍵は復元できない。
     if crypt::is_luks(&root) {

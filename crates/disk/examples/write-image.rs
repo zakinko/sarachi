@@ -5,8 +5,8 @@
 //! 例題が実機を壊せてよい理由はない。
 
 use anyhow::{Result, bail};
-use std::fs::OpenOptions;
 use sarachi_disk::{Layout, write_gpt};
+use std::fs::OpenOptions;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -14,7 +14,10 @@ fn main() -> Result<()> {
     let gib: u64 = args.next().unwrap_or_else(|| "32".into()).parse()?;
     let sector: u64 = args.next().unwrap_or_else(|| "512".into()).parse()?;
 
-    if std::fs::metadata(&path).map(|m| !m.is_file()).unwrap_or(false) {
+    if std::fs::metadata(&path)
+        .map(|m| !m.is_file())
+        .unwrap_or(false)
+    {
         bail!("{path} は通常ファイルではない。この例題はイメージにしか書かない");
     }
 
@@ -22,7 +25,11 @@ fn main() -> Result<()> {
     let layout = Layout::plan(bytes, sector)?;
     print!("{}", layout.describe());
 
-    let mut f = OpenOptions::new().write(true).create(true).truncate(true).open(&path)?;
+    let mut f = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&path)?;
     f.set_len(bytes)?;
     write_gpt(&layout, &mut f)?;
 

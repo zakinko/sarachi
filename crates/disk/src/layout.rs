@@ -98,7 +98,7 @@ impl Layout {
         if !sector_size.is_power_of_two() || !(512..=4096).contains(&sector_size) {
             bail!("扱えないセクタ長: {sector_size}");
         }
-        if ALIGNMENT_BYTES % sector_size != 0 {
+        if !ALIGNMENT_BYTES.is_multiple_of(sector_size) {
             bail!("セクタ長 {sector_size} が 1MiB 境界を割り切らない");
         }
 
@@ -250,7 +250,11 @@ mod tests {
         let b = Layout::plan(64 * GIB, 512).unwrap();
         assert_ne!(a.disk_guid, b.disk_guid);
         for (pa, pb) in a.partitions.iter().zip(&b.partitions) {
-            assert_ne!(pa.unique_guid, pb.unique_guid, "{:?} の GUID が重複", pa.role);
+            assert_ne!(
+                pa.unique_guid, pb.unique_guid,
+                "{:?} の GUID が重複",
+                pa.role
+            );
             assert_eq!(pa.type_guid, pb.type_guid, "type GUID は固定のはず");
         }
     }
