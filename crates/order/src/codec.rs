@@ -10,7 +10,7 @@ use anyhow::{Result, bail};
 
 /// 形式が変わったら末尾の数字を上げる。古い署名が新しい解釈で
 /// 通ってしまわないよう、magic も署名対象に含める。
-pub const MAGIC: &[u8; 8] = b"UMDMORD1";
+pub const MAGIC: &[u8; 8] = b"SARAORD1";
 
 /// 長さの上限。ここを開けておくと、巨大な入力で資源を食わせられる。
 const MAX_STR: usize = 256;
@@ -96,7 +96,7 @@ mod tests {
             nonce: random_nonce(),
             issued_at: 1_789_000_000,
             expires_at: 1_789_003_600,
-            issuer: "unix-mdm control plane".into(),
+            issuer: "sarachi control plane".into(),
         }
     }
 

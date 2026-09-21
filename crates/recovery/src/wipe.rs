@@ -11,8 +11,8 @@ use anyhow::{Context, Result};
 use std::fs::OpenOptions;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use unix_mdm_disk::{Layout, Role};
-use unix_mdm_order::Level;
+use sarachi_disk::{Layout, Role};
+use sarachi_order::Level;
 
 /// パーティション名を作る。`/dev/sda` なら `/dev/sda3`、
 /// `/dev/nvme0n1` や `/dev/mmcblk0` なら `p` を挟む。

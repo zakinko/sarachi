@@ -58,8 +58,8 @@ impl Role {
     fn label(self) -> &'static str {
         match self {
             Role::Esp => "ESP",
-            Role::Recovery => "UNIXMDM-RECOVERY",
-            Role::Root => "UNIXMDM-ROOT",
+            Role::Recovery => "SARACHI-RECOVERY",
+            Role::Root => "SARACHI-ROOT",
         }
     }
 }

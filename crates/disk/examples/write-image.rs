@@ -6,7 +6,7 @@
 
 use anyhow::{Result, bail};
 use std::fs::OpenOptions;
-use unix_mdm_disk::{Layout, write_gpt};
+use sarachi_disk::{Layout, write_gpt};
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);

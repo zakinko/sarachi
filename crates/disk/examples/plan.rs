@@ -1,7 +1,7 @@
 //! 書き込む前に配置を人間が確認するための出力。
 //! 実ディスクには一切触れない。
 
-use unix_mdm_disk::Layout;
+use sarachi_disk::Layout;
 
 fn main() -> anyhow::Result<()> {
     for (label, bytes, sector) in [

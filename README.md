@@ -1,6 +1,11 @@
-# unix-mdm
+# sarachi
 
-Linux と BSD の端末を遠隔から消去し、入れ直すための仕組み。Microsoft の
+Linux と BSD の端末を遠隔から消去し、入れ直すための仕組み。
+
+名前は更地から。この仕組みがやるのは消すことだけではなく、**消して、均して、
+次が建つ状態にして返す**ことで、更地はその状態そのものを指す。Windows の
+`doWipe` が「破壊」ではなく「初期化して OOBE で戻ってくる」だったという、
+設計の出発点とも重なる。Microsoft の
 MDM（Intune）からも起動できるが、**MS に依存せず単独で成立する**ことを主軸に
 据えている。Windows の WinRE / Autopilot Reset に相当するものを Unix 系で作る。
 
@@ -85,22 +90,22 @@ UEFI → systemd-boot → カーネル → initramfs(RAM) → /init
 recovery-env/alpine/build.sh     # initramfs を組む（Alpine の上で）
 recovery-env/alpine/bundle.sh    # 配る三つの像を作る
 cargo test --workspace           # 全クレートの試験
-cargo run -p unix-mdm-disk --example plan                # 配置を見る（何も書かない）
-cargo run -p unix-mdm-image --example sign -- keygen .   # 署名鍵を作る
-cargo run -p unix-mdm-image --example sign -- sign rootfs.img signing.key
+cargo run -p sarachi-disk --example plan                # 配置を見る（何も書かない）
+cargo run -p sarachi-image --example sign -- keygen .   # 署名鍵を作る
+cargo run -p sarachi-image --example sign -- sign rootfs.img signing.key
 ```
 
 回復環境の側:
 
 ```
-unix-mdm-recovery list
-unix-mdm-recovery plan <dev>
-unix-mdm-recovery wipe <dev> --level reset|factory|destroy [--commit]
-unix-mdm-recovery provision <dev> --base <url> --key <pub> \
+sarachi-recovery list
+sarachi-recovery plan <dev>
+sarachi-recovery wipe <dev> --level reset|factory|destroy [--commit]
+sarachi-recovery provision <dev> --base <url> --key <pub> \
                   --esp esp --recovery recovery --rootfs rootfs [--commit]
 ```
 
-`unix-mdm-recovery` は既定で何も書かない。`--commit` を明示しない限り、
+`sarachi-recovery` は既定で何も書かない。`--commit` を明示しない限り、
 何をするつもりかを表示して終わる。
 
 ## 対象

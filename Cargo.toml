@@ -6,7 +6,7 @@ members = ["crates/disk", "crates/image", "crates/order", "crates/recovery"]
 version = "0.1.0"
 edition = "2024"
 license = "LGPL-3.0-or-later"
-repository = "https://github.com/zakinko/unix-mdm"
+repository = "https://github.com/zakinko/sarachi"
 
 [workspace.dependencies]
 anyhow = "1"

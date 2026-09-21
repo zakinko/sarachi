@@ -1,5 +1,5 @@
 [package]
-name = "unix-mdm-order"
+name = "sarachi-order"
 description = "署名付き消去命令の型と検証"
 version.workspace = true
 edition.workspace = true

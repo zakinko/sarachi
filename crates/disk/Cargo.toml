@@ -1,5 +1,5 @@
 [package]
-name = "unix-mdm-disk"
+name = "sarachi-disk"
 description = "回復パーティションを含むディスク配置の定義と作成"
 version.workspace = true
 edition.workspace = true

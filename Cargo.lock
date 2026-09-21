@@ -540,6 +540,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "sarachi-disk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "uuid",
+]
+
+[[package]]
+name = "sarachi-image"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ed25519-dalek",
+ "rand_core",
+ "sha2",
+]
+
+[[package]]
+name = "sarachi-order"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ed25519-dalek",
+ "rand_core",
+]
+
+[[package]]
+name = "sarachi-recovery"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sarachi-disk",
+ "sarachi-image",
+ "sarachi-order",
+ "ureq",
+]
+
+[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -694,44 +732,6 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
-
-[[package]]
-name = "unix-mdm-disk"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "uuid",
-]
-
-[[package]]
-name = "unix-mdm-image"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ed25519-dalek",
- "rand_core",
- "sha2",
-]
-
-[[package]]
-name = "unix-mdm-order"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ed25519-dalek",
- "rand_core",
-]
-
-[[package]]
-name = "unix-mdm-recovery"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "unix-mdm-disk",
- "unix-mdm-image",
- "unix-mdm-order",
- "ureq",
-]
 
 [[package]]
 name = "untrusted"

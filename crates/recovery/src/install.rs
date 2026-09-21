@@ -7,11 +7,11 @@
 
 use crate::fetch;
 use anyhow::{Context, Result, bail};
-use unix_mdm_image::VerifyingKey;
+use sarachi_image::VerifyingKey;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use unix_mdm_image::{SignedManifest, verify_and_write};
+use sarachi_image::{SignedManifest, verify_and_write};
 
 /// マニフェストの上限。これを超えるものはマニフェストではない。
 const MANIFEST_LIMIT: usize = 4 * 1024 * 1024;

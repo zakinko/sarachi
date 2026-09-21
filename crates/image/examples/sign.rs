@@ -7,7 +7,7 @@
 use anyhow::{Context, Result, bail};
 use ed25519_dalek::{Signer, SigningKey};
 use std::fs;
-use unix_mdm_image::{DEFAULT_CHUNK, Manifest, SignedManifest};
+use sarachi_image::{DEFAULT_CHUNK, Manifest, SignedManifest};
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()

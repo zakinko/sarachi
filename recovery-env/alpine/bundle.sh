@@ -34,7 +34,7 @@ mcopy -i "$E" "$OUT/initramfs.gz" ::/initramfs.gz
 # 困るため。実 OS のエントリが増えたときに選べる余地を残す。
 printf 'default recovery\ntimeout 3\nconsole-mode max\n' > "$OUT/loader.conf"
 mcopy -i "$E" "$OUT/loader.conf" ::/loader/loader.conf
-printf 'title unix-mdm recovery\nlinux /vmlinuz\ninitrd /initramfs.gz\noptions console=ttyAMA0 unixmdm.net\n' \
+printf 'title sarachi recovery\nlinux /vmlinuz\ninitrd /initramfs.gz\noptions console=ttyAMA0 sarachi.net\n' \
     > "$OUT/recovery.conf"
 mcopy -i "$E" "$OUT/recovery.conf" ::/loader/entries/recovery.conf
 printf '  %s (%s MiB)\n' "$E" "$ESP_MB"
@@ -43,13 +43,13 @@ echo "### 回復領域の像（ファームウェア）"
 R=$DIST/recovery.img
 rm -f "$R"
 dd if=/dev/zero of="$R" bs=1M count="$REC_MB" status=none
-mkfs.ext4 -q -L UNIXMDM-RECOVERY "$R"
+mkfs.ext4 -q -L SARACHI-RECOVERY "$R"
 W=$(mktemp -d)
 sudo mount -o loop "$R" "$W"
 sudo mkdir -p "$W/firmware" "$W/etc"
 # 実機向けには絞ったファームウェア一式をここへ置く（188MiB 程度）。
 # 試験ではそこまで要らないので、置き場だけ作って目印を入れる。
-echo "unix-mdm recovery partition 2026-09-17" | sudo tee "$W/etc/unix-mdm-recovery" >/dev/null
+echo "sarachi recovery partition 2026-09-17" | sudo tee "$W/etc/sarachi-recovery" >/dev/null
 if [ -d /lib/firmware ] && [ "${WITH_FIRMWARE:-0}" = 1 ]; then
     sudo cp -a /lib/firmware/. "$W/firmware/" 2>/dev/null || true
 fi

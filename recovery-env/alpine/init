@@ -23,7 +23,7 @@ fi
 
 echo
 echo "=============================================="
-echo " unix-mdm recovery environment"
+echo " sarachi recovery environment"
 echo "=============================================="
 
 echo "-- 自分がどこで走っているか --"
@@ -55,7 +55,7 @@ done
 
 # ネットワークは必要な時だけ上げる。WinRE も既定では常時接続を持たない。
 # 有線が挿さっていればそれが一番速いので先に試す。
-if grep -q unixmdm.net /proc/cmdline 2>/dev/null; then
+if grep -q sarachi.net /proc/cmdline 2>/dev/null; then
     echo "-- ネットワークを上げる --"
     ifconfig lo 127.0.0.1 up 2>/dev/null
     for d in /sys/class/net/*; do
@@ -76,55 +76,55 @@ if grep -q unixmdm.net /proc/cmdline 2>/dev/null; then
     [ -f /etc/resolv.conf ] && sed 's/^/   dns: /' /etc/resolv.conf
 fi
 
-if [ -x /bin/unix-mdm-recovery ]; then
-    echo "-- unix-mdm-recovery から見たディスク --"
-    /bin/unix-mdm-recovery list
-    # unixmdm.partition=<dev> が与えられていれば、そのディスクを実際に切る。
+if [ -x /bin/sarachi-recovery ]; then
+    echo "-- sarachi-recovery から見たディスク --"
+    /bin/sarachi-recovery list
+    # sarachi.partition=<dev> が与えられていれば、そのディスクを実際に切る。
     # 与えられなければ配置を表示するだけで何も書かない。
-    # unixmdm.install=<base-url> が与えられていれば、取得して書き戻す。
-    BASE=$(sed -n 's/.*unixmdm\.install=\([^ ]*\).*/\1/p' /proc/cmdline)
-    DEST=$(sed -n 's/.*unixmdm\.dest=\([^ ]*\).*/\1/p' /proc/cmdline)
+    # sarachi.install=<base-url> が与えられていれば、取得して書き戻す。
+    BASE=$(sed -n 's/.*sarachi\.install=\([^ ]*\).*/\1/p' /proc/cmdline)
+    DEST=$(sed -n 's/.*sarachi\.dest=\([^ ]*\).*/\1/p' /proc/cmdline)
     if [ -n "$BASE" ] && [ -n "$DEST" ]; then
         echo "-- $DEST へ $BASE から書き戻す --"
-        /bin/unix-mdm-recovery install "$DEST" \
+        /bin/sarachi-recovery install "$DEST" \
             --manifest "$BASE/test.manifest" \
             --image "$BASE/test.img" \
-            --key /etc/unix-mdm.pub \
+            --key /etc/sarachi.pub \
             --commit
     fi
 
-    # unixmdm.provision=<dev> unixmdm.base=<url> で一周する。
+    # sarachi.provision=<dev> sarachi.base=<url> で一周する。
     # 切る → 台ごとの鍵で暗号化 → 中へ書く。
-    PROV=$(sed -n 's/.*unixmdm\.provision=\([^ ]*\).*/\1/p' /proc/cmdline)
-    PBASE=$(sed -n 's/.*unixmdm\.base=\([^ ]*\).*/\1/p' /proc/cmdline)
+    PROV=$(sed -n 's/.*sarachi\.provision=\([^ ]*\).*/\1/p' /proc/cmdline)
+    PBASE=$(sed -n 's/.*sarachi\.base=\([^ ]*\).*/\1/p' /proc/cmdline)
     if [ -n "$PROV" ] && [ -n "$PBASE" ]; then
         echo "-- $PROV を一周させる（切る→暗号化→書く）--"
-        /bin/unix-mdm-recovery provision "$PROV" \
+        /bin/sarachi-recovery provision "$PROV" \
             --base "$PBASE" \
             --esp esp --recovery recovery --rootfs rootfs \
-            --key /etc/unix-mdm.pub \
-            --key-out /run/unixmdm-root.key \
+            --key /etc/sarachi.pub \
+            --key-out /run/sarachi-root.key \
             --print-key \
             --commit
     fi
 
-    # unixmdm.wipe=<dev> unixmdm.level=<段階> で消す。
-    WDEV=$(sed -n 's/.*unixmdm\.wipe=\([^ ]*\).*/\1/p' /proc/cmdline)
-    WLVL=$(sed -n 's/.*unixmdm\.level=\([^ ]*\).*/\1/p' /proc/cmdline)
+    # sarachi.wipe=<dev> sarachi.level=<段階> で消す。
+    WDEV=$(sed -n 's/.*sarachi\.wipe=\([^ ]*\).*/\1/p' /proc/cmdline)
+    WLVL=$(sed -n 's/.*sarachi\.level=\([^ ]*\).*/\1/p' /proc/cmdline)
     if [ -n "$WDEV" ] && [ -n "$WLVL" ]; then
         echo "-- $WDEV を消す（段階 $WLVL）--"
-        /bin/unix-mdm-recovery wipe "$WDEV" --level "$WLVL" --commit
+        /bin/sarachi-recovery wipe "$WDEV" --level "$WLVL" --commit
     fi
 
-    TARGET=$(sed -n 's/.*unixmdm\.partition=\([^ ]*\).*/\1/p' /proc/cmdline)
+    TARGET=$(sed -n 's/.*sarachi\.partition=\([^ ]*\).*/\1/p' /proc/cmdline)
     if [ -n "$TARGET" ]; then
         echo "-- $TARGET を実際に切る --"
-        /bin/unix-mdm-recovery partition "$TARGET" --commit
+        /bin/sarachi-recovery partition "$TARGET" --commit
     else
         for d in /sys/block/vdb /sys/block/sdb /sys/block/nvme1n1; do
             [ -d "$d" ] || continue
             echo "-- ${d##*/} に対する配置（dry-run）--"
-            /bin/unix-mdm-recovery plan "${d##*/}"
+            /bin/sarachi-recovery plan "${d##*/}"
             break
         done
     fi
@@ -137,7 +137,7 @@ echo
 
 # 無人で検証する時は、報告だけして止まる。回復環境は最終的に
 # 誰も見ていない場所で走るので、対話シェルに落ちない経路が本番の姿になる。
-if grep -q unixmdm.autotest /proc/cmdline 2>/dev/null; then
+if grep -q sarachi.autotest /proc/cmdline 2>/dev/null; then
     echo "autotest: 報告を終えたので停止する"
     poweroff -f
 fi

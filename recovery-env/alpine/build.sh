@@ -51,15 +51,15 @@ install -m 0755 "$HERE/udhcpc.script" "$STAGE/usr/share/udhcpc/default.script"
 # イメージと署名の両方が手に入る状態を作らないため。
 PUBKEY=${PUBKEY:-$OUT/signing.pub}
 if [ -f "$PUBKEY" ]; then
-    install -m 0444 "$PUBKEY" "$STAGE/etc/unix-mdm.pub"
+    install -m 0444 "$PUBKEY" "$STAGE/etc/sarachi.pub"
     printf 'pubkey    : %s\n' "$(cat "$PUBKEY")"
 fi
 
 # 我々の実行体。静的リンクなので libc を連れて行かなくてよい。
 # BIN で場所を指せる。無ければ busybox だけの骨格として組む。
-BIN=${BIN:-$OUT/unix-mdm-recovery}
+BIN=${BIN:-$OUT/sarachi-recovery}
 if [ -f "$BIN" ]; then
-    install -m 0755 "$BIN" "$STAGE/bin/unix-mdm-recovery"
+    install -m 0755 "$BIN" "$STAGE/bin/sarachi-recovery"
     printf 'recovery  : %s\n' "$(du -h "$BIN" | cut -f1)"
 fi
 

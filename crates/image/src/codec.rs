@@ -1,10 +1,10 @@
-//! マニフェストの正規形。`unix-mdm-order` と同じ理由で手で書いている。
+//! マニフェストの正規形。`sarachi-order` と同じ理由で手で書いている。
 //! 署名対象のバイト列が一意でないと、同じ意味の別表現に署名を使い回せる。
 
 use crate::Manifest;
 use anyhow::{Result, bail};
 
-pub const MAGIC: &[u8; 8] = b"UMDMIMG1";
+pub const MAGIC: &[u8; 8] = b"SARAIMG1";
 
 const MAX_NAME: usize = 256;
 /// チャンク数の上限。8MiB チャンクなら 512GiB ぶんで、実機のディスクに足りる。

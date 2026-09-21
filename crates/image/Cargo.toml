@@ -1,5 +1,5 @@
 [package]
-name = "unix-mdm-image"
+name = "sarachi-image"
 description = "署名付きイメージマニフェストと、書き込み前に検証する取り込み"
 version.workspace = true
 edition.workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "unix-mdm-recovery"
+name = "sarachi-recovery"
 description = "回復環境で走る実行体"
 version.workspace = true
 edition.workspace = true
@@ -8,14 +8,14 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-unix-mdm-disk = { path = "../disk" }
-unix-mdm-order = { path = "../order" }
-unix-mdm-image = { path = "../image" }
+sarachi-disk = { path = "../disk" }
+sarachi-order = { path = "../order" }
+sarachi-image = { path = "../image" }
 # TLS は rustls。OpenSSL を持ち込まないので initramfs が小さく済み、
 # NetBSD と OpenBSD の LibreSSL 問題も踏まない。証明書は webpki-roots を
 # 焼き込む（回復環境にはシステムの証明書置き場が無い）。
 ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
 
 [[bin]]
-name = "unix-mdm-recovery"
+name = "sarachi-recovery"
 path = "src/main.rs"

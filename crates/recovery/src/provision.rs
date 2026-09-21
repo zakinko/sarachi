@@ -18,10 +18,10 @@ use crate::{crypt, fetch, wipe};
 use anyhow::{Context, Result, bail};
 use std::fs::OpenOptions;
 use std::path::Path;
-use unix_mdm_disk::{Layout, Partition, Role, write_gpt};
-use unix_mdm_image::{Manifest, SignedManifest, VerifyingKey, verify_and_write};
+use sarachi_disk::{Layout, Partition, Role, write_gpt};
+use sarachi_image::{Manifest, SignedManifest, VerifyingKey, verify_and_write};
 
-const MAPPER_NAME: &str = "unixmdm-root";
+const MAPPER_NAME: &str = "sarachi-root";
 const MANIFEST_LIMIT: usize = 4 * 1024 * 1024;
 
 /// 配布物の置き場。`<base>/<name>.img` と `<base>/<name>.manifest` を読む。

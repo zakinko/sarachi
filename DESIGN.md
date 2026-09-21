@@ -1,4 +1,4 @@
-# unix-mdm — 設計メモ
+# sarachi — 設計メモ
 
 2026-09-16 起案
 
@@ -473,7 +473,7 @@ crypto-erase は**容量に依存しない**（ヘッダのみ書き換える）
 - Destroy 段階の後、主 GPT も予備 GPT も消えている。
 - **外部媒体を一切繋がず `full.img` だけで起動**し、回復環境が立ち上がった。
   カーネル引数は書き込んだ loader entry のもの
-  （`initrd=\initramfs.gz console=ttyAMA0 unixmdm.net`）。
+  （`initrd=\initramfs.gz console=ttyAMA0 sarachi.net`）。
 
 ### 設計上の要点
 

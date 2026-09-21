@@ -15,7 +15,7 @@
 #   vm-type は qemu であること。vz は Linux 専用で FreeBSD は起動しない。
 
 # 2026-09-17 00:5x  VM の中に作った作業ディレクトリ（消すなら）
-#   alpine-arm64:  ~/recovery-build ~/unix-mdm-build ~/gpt-verify ~/erase-test
+#   alpine-arm64:  ~/recovery-build ~/sarachi-build ~/gpt-verify ~/erase-test
 #                  ~/timing-test ~/fw-curated ~/fw-laptop ~/libhb-probe
 #   freebsd-arm64: ~/libhb-probe ~/libkrimes-patch
 #   → いずれも VM ごと消せば無くなる。

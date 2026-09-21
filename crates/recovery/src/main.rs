@@ -9,7 +9,7 @@
 
 use anyhow::{Context, Result, bail};
 use std::fs::OpenOptions;
-use unix_mdm_disk::{Layout, write_gpt};
+use sarachi_disk::{Layout, write_gpt};
 
 mod block;
 mod crypt;
@@ -20,7 +20,7 @@ mod wipe;
 
 fn usage() -> ! {
     eprintln!(
-        "unix-mdm-recovery
+        "sarachi-recovery
 
   list                        見えているディスクを並べる
   plan <device>               その機体に対する配置を表示する（何も書かない）
@@ -136,9 +136,9 @@ fn main() -> Result<()> {
             let level = match args.iter().position(|a| a == "--level")
                 .and_then(|i| args.get(i + 1)).map(String::as_str)
             {
-                Some("reset") => unix_mdm_order::Level::Reset,
-                Some("factory") => unix_mdm_order::Level::Factory,
-                Some("destroy") => unix_mdm_order::Level::Destroy,
+                Some("reset") => sarachi_order::Level::Reset,
+                Some("factory") => sarachi_order::Level::Factory,
+                Some("destroy") => sarachi_order::Level::Destroy,
                 _ => {
                     eprintln!("--level は reset / factory / destroy のいずれか");
                     std::process::exit(2);
@@ -162,7 +162,7 @@ fn main() -> Result<()> {
             let rootfs = opt("--rootfs").unwrap_or_else(|| "rootfs".into());
             let esp = opt("--esp");
             let recovery = opt("--recovery");
-            let key_out = opt("--key-out").unwrap_or_else(|| "/run/unixmdm-root.key".into());
+            let key_out = opt("--key-out").unwrap_or_else(|| "/run/sarachi-root.key".into());
             let trusted = install::load_key(std::path::Path::new(&key_path))?;
             let d = find(dev)?;
             println!("{}\n", d.describe());
