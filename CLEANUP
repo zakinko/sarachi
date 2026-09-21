@@ -51,3 +51,13 @@
 #     limactl create --name=freebsd-arm64 --vm-type=qemu --arch=aarch64 \
 #       --cpus=4 --memory=8 --disk=40 --tty=false template://freebsd-15
 #   その後 recovery-env/alpine/build.sh と bundle.sh で回復環境は再現できる。
+
+# 2026-09-22 00:11  lima インスタンス freebsd-arm64 (qemu, 4cpu/8GB/40GB)
+#   limactl stop freebsd-arm64 && limactl delete freebsd-arm64
+#   → geli を実機で確かめるために立て直した。CI が FreeBSD で
+#     ci/crypt-real.sh を走らせるようになったので、手元での再確認が
+#     要らなければ消してよい。cgd や softraid に進むときは NetBSD と
+#     OpenBSD の VM を別に立てることになる。
+#   VM の中に置いたもの: ~/src.tgz ~/run-real.sh ~/ci-try.sh
+#     ~/geli-test.sh（作業木 ~/sarachi-geli ~/sarachi-ci は script が
+#     自分で消している）。VM ごと消せば無くなる。
