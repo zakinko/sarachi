@@ -12,7 +12,10 @@ on:
     branches: [main]
     paths:
       - 'crates/**'
-      - 'patches/**'
+      # 当て物そのものだけ。patches/** にすると README を直しただけで
+      # 四十分の実行が起きる。実際に一度そうなった。
+      - 'patches/*.diff'
+      - 'ci/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/bsd.yml'
