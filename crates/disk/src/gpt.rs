@@ -172,26 +172,79 @@ pub fn write_gpt<W: Write + Seek>(layout: &Layout, w: &mut W) -> Result<()> {
 mod tests {
     use super::*;
     use crate::layout::{Role, RootKind};
-    use std::io::Cursor;
+    use std::collections::BTreeMap;
 
     const GIB: u64 = 1024 * 1024 * 1024;
 
-    fn written(bytes: u64, ss: u64) -> (Layout, Vec<u8>) {
+    /// 書かれた所だけを覚える受け皿。
+    ///
+    /// `Cursor::new(vec![0u8; bytes])` にしていたら、64GiB のディスクを試すだけで
+    /// 64GiB を確保しようとしていた。overcommit する OS では素通りするが、
+    /// OpenBSD は確保を断り、FreeBSD は OOM で殺した。CI で両方に当たって
+    /// 分かったもので、手元の macOS では見えなかった。
+    ///
+    /// 実際のディスクへの書き込みも疎なので、こちらのほうが本物に近い。
+    #[derive(Default)]
+    struct Sparse {
+        pos: u64,
+        bytes: BTreeMap<u64, u8>,
+    }
+
+    impl Sparse {
+        /// 書いていない所は 0 として読む。実ディスクの未書き込み領域と同じ。
+        fn read_at(&self, off: u64, n: usize) -> Vec<u8> {
+            (0..n as u64)
+                .map(|i| *self.bytes.get(&(off + i)).unwrap_or(&0))
+                .collect()
+        }
+
+        fn u8_at(&self, off: u64) -> u8 {
+            *self.bytes.get(&off).unwrap_or(&0)
+        }
+    }
+
+    impl Write for Sparse {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            for (i, b) in buf.iter().enumerate() {
+                self.bytes.insert(self.pos + i as u64, *b);
+            }
+            self.pos += buf.len() as u64;
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Seek for Sparse {
+        fn seek(&mut self, p: SeekFrom) -> std::io::Result<u64> {
+            self.pos = match p {
+                SeekFrom::Start(n) => n,
+                SeekFrom::Current(n) => (self.pos as i64 + n) as u64,
+                SeekFrom::End(_) => {
+                    return Err(std::io::Error::other("End からの seek は使わない"));
+                }
+            };
+            Ok(self.pos)
+        }
+    }
+
+    fn written(bytes: u64, ss: u64) -> (Layout, Sparse) {
         let l = Layout::plan(bytes, ss, RootKind::LinuxLuks).unwrap();
-        let mut c = Cursor::new(vec![0u8; bytes as usize]);
+        let mut c = Sparse::default();
         write_gpt(&l, &mut c).unwrap();
-        (l, c.into_inner())
+        (l, c)
     }
 
     #[test]
     fn 保護mbrが正しい() {
         let (_, img) = written(64 * GIB, 512);
-        assert_eq!(img[510], 0x55);
-        assert_eq!(img[511], 0xAA);
-        assert_eq!(img[446 + 4], 0xEE, "種別が GPT protective でない");
+        assert_eq!(img.u8_at(510), 0x55);
+        assert_eq!(img.u8_at(511), 0xAA);
+        assert_eq!(img.u8_at(446 + 4), 0xEE, "種別が GPT protective でない");
         // 64GiB は 512B セクタで 134,217,728 セクタ。32bit に収まるので実値が入る。
         assert_eq!(
-            u32::from_le_bytes(img[458..462].try_into().unwrap()),
+            u32::from_le_bytes(img.read_at(458, 4).try_into().unwrap()),
             (64 * GIB / 512 - 1) as u32
         );
     }
@@ -211,10 +264,10 @@ mod tests {
     #[test]
     fn 主ヘッダの署名とcrcが通る() {
         let (l, img) = written(64 * GIB, 512);
-        let h = &img[l.sector_size as usize..l.sector_size as usize + 92];
+        let h = img.read_at(l.sector_size, 92);
         assert_eq!(&h[0..8], SIGNATURE);
 
-        let mut probe = h.to_vec();
+        let mut probe = h.clone();
         let stored = u32::from_le_bytes(probe[16..20].try_into().unwrap());
         probe[16..20].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(crc32(&probe), stored, "ヘッダ CRC が合わない");
@@ -223,9 +276,8 @@ mod tests {
     #[test]
     fn 予備ヘッダが末尾にあり主と対になる() {
         let (l, img) = written(64 * GIB, 512);
-        let ss = l.sector_size as usize;
-        let last = (l.total_sectors - 1) as usize * ss;
-        let bh = &img[last..last + 92];
+        let last = (l.total_sectors - 1) * l.sector_size;
+        let bh = img.read_at(last, 92);
         assert_eq!(&bh[0..8], SIGNATURE);
         assert_eq!(
             u64::from_le_bytes(bh[24..32].try_into().unwrap()),
@@ -241,17 +293,17 @@ mod tests {
     #[test]
     fn エントリが配置と一致する() {
         let (l, img) = written(64 * GIB, 512);
-        let base = 2 * l.sector_size as usize;
+        let base = 2 * l.sector_size;
         for p in &l.partitions {
-            let o = base + ((p.index - 1) * ENTRY_SIZE) as usize;
-            assert_eq!(&img[o..o + 16], p.type_guid.to_bytes_le());
-            assert_eq!(&img[o + 16..o + 32], p.unique_guid.to_bytes_le());
+            let o = base + ((p.index - 1) * ENTRY_SIZE) as u64;
+            assert_eq!(img.read_at(o, 16), p.type_guid.to_bytes_le());
+            assert_eq!(img.read_at(o + 16, 16), p.unique_guid.to_bytes_le());
             assert_eq!(
-                u64::from_le_bytes(img[o + 32..o + 40].try_into().unwrap()),
+                u64::from_le_bytes(img.read_at(o + 32, 8).try_into().unwrap()),
                 p.first_lba
             );
             assert_eq!(
-                u64::from_le_bytes(img[o + 40..o + 48].try_into().unwrap()),
+                u64::from_le_bytes(img.read_at(o + 40, 8).try_into().unwrap()),
                 p.last_lba
             );
         }
@@ -261,9 +313,9 @@ mod tests {
     fn ラベルがutf16leで入る() {
         let (l, img) = written(64 * GIB, 512);
         let rec = l.get(Role::Recovery).unwrap();
-        let o = 2 * l.sector_size as usize + ((rec.index - 1) * ENTRY_SIZE) as usize + 56;
-        let units: Vec<u16> = (0..rec.label.len())
-            .map(|i| u16::from_le_bytes(img[o + i * 2..o + i * 2 + 2].try_into().unwrap()))
+        let o = 2 * l.sector_size + ((rec.index - 1) * ENTRY_SIZE) as u64 + 56;
+        let units: Vec<u16> = (0..rec.label.len() as u64)
+            .map(|i| u16::from_le_bytes(img.read_at(o + i * 2, 2).try_into().unwrap()))
             .collect();
         assert_eq!(String::from_utf16(&units).unwrap(), rec.label);
     }
@@ -271,7 +323,7 @@ mod tests {
     #[test]
     fn 四千九十六バイトセクタでも通る() {
         let (l, img) = written(64 * GIB, 4096);
-        let h = &img[4096..4096 + 92];
+        let h = img.read_at(4096, 92);
         assert_eq!(&h[0..8], SIGNATURE);
         // 4096B ではエントリ配列が 4 セクタで済むので、使用可能域が前に出る。
         assert_eq!(u64::from_le_bytes(h[40..48].try_into().unwrap()), 6);
@@ -287,9 +339,9 @@ mod tests {
         let ss = l.sector_size;
         let eas = entry_array_sectors(ss);
         let n = (ENTRY_COUNT * ENTRY_SIZE) as usize;
-        let primary = &img[(2 * ss) as usize..(2 * ss) as usize + n];
+        let primary = img.read_at(2 * ss, n);
         let backup_lba = l.total_sectors - 1 - eas;
-        let backup = &img[(backup_lba * ss) as usize..(backup_lba * ss) as usize + n];
+        let backup = img.read_at(backup_lba * ss, n);
         assert_eq!(primary, backup, "予備エントリ配列が主と違う");
     }
 }
