@@ -25,28 +25,31 @@ BOOTSTRAP_VER=$4
 # いて、rustc 本体と違って版差の #if を持っていない。
 #
 # DPorts が配る binary がちょうど合う版を持っている。
-if [ -z "$LLVMPKG" ]; then
-	case $VERSION in
-	1.86.*) LLVMPKG=llvm19 ;;  # 同梱 19.1.7  DPorts llvm19-19.1.7_1
-	1.87.*) LLVMPKG=llvm20 ;;  # 同梱 20.1.1  DPorts llvm20-20.1.1
-	1.88.*) LLVMPKG=llvm20 ;;  # 同梱 20.1.5  DPorts は 20.1.1（major/minor 一致）
+llvm_for() {
+	case $1 in
+	1.86.*) echo llvm19 ;;  # 同梱 19.1.7  DPorts llvm19-19.1.7_1
+	1.87.*) echo llvm20 ;;  # 同梱 20.1.1  DPorts llvm20-20.1.1
+	1.88.*) echo llvm20 ;;  # 同梱 20.1.5  DPorts は 20.1.1（major/minor 一致）
 	*)
-		echo "$VERSION に合う LLVM が表に無い。" >&2
+		echo "$1 に合う LLVM が表に無い。" >&2
 		echo "rust-lang/llvm-project の cmake/Modules/LLVMVersion.cmake で" >&2
 		echo "同梱の版を見て、表に足すこと。" >&2
-		exit 1
+		return 1
 		;;
 	esac
-fi
+}
+
+[ -n "$LLVMPKG" ] || LLVMPKG=$(llvm_for "$VERSION") || exit 1
 echo "### rustc $VERSION には $LLVMPKG を使う"
 
-# LLVM はここで入れる。prepare で両方入れてはいけない。
+# LLVM はここで入れる。prepare で決め打ちにはできない。版によって変わる。
 #
-# rust の lld を建てる step は [target.*] の llvm-config を使わず、CMake の
-# find_package で自分で LLVM を探す。llvm19 と llvm20 を両方入れた状態で
-# 1.86.0 を建てたら、config.toml には llvm-config19 と書いてあるのに
-# lld の compile だけが -I/usr/local/llvm20/include を拾って落ちた。
-# 合う版だけを置けば、拾い間違えようがない。
+# 合う版だけを置く。rust の lld を建てる step は [target.*] の llvm-config を
+# 使わず CMake の find_package で自分で探すので、違う版が転がっていると
+# そちらを拾う。llvm19 と llvm20 を両方入れて 1.86.0 を建てたら、
+# config.toml には llvm-config19 と書いてあるのに lld の compile だけが
+# -I/usr/local/llvm20/include を拾って落ちた。今は lld を建てないように
+# してあるが、置かないのが一番確実。
 pkg install -y "$LLVMPKG"
 if [ -n "$BOOTSTRAP_URL" ] && [ -z "$BOOTSTRAP_VER" ]; then
 	echo "置き場を渡すなら、種の版も要る" >&2
@@ -135,7 +138,14 @@ cat > config.toml <<CONF
 # 同梱の LLVM を建てると 4 core では二時間以上かかり、job の上限に収まらない。
 # package の LLVM に向ける。
 download-ci-llvm = false
-link-shared = true
+# link-shared は既定の false のままにする。true にすると出来た rustc が
+# libLLVM-<版>.so を要り、その package が入っている機械でしか動かない。
+# 配る物としてそれは困るし、次の段で実際に困った: llvm19 に動的 link した
+# 1.86 を、llvm20 しか入っていない 1.87 の run で種にしたら
+#
+#   error: process didn't exit successfully: `.../bin/rustc -vV` (exit status: 1)
+#
+# で止まった。静的なら種にも配布物にも、置き場の LLVM が要らない。
 
 [build]
 build = "${TRIPLE}"
