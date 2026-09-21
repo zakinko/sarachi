@@ -195,6 +195,16 @@ debug-assertions = false
 
 [target.${TRIPLE}]
 llvm-config = "${LLVM_CONFIG}"
+# DragonFly は既定で PIE を作るが、-sys crate が建てる C の source には
+# -fPIC が付かない。cargo の link で libssh2-sys がこうなる。
+#
+#   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
+#     `.rodata.str1.1' can not be used when making a PIE object
+#
+# 環境変数の CFLAGS では届かない。bootstrap が target ごとに
+# CFLAGS_<triple> を立てるので、そちらが素の CFLAGS より強い。ここに書く。
+cflags = "-fPIC"
+cxxflags = "-fPIC"
 CONF
 cat config.toml | sed 's/^/  /'
 
@@ -227,6 +237,8 @@ export LIBRARY_PATH
 #
 # 同じ物を要求する -sys crate は他にもある（libgit2 blake3 psm）ので、
 # 個別にではなく CFLAGS で一度に渡す。
+# 実際に効くのは config.toml の [target.*] cflags の方だが、bootstrap を
+# 経由しない build script のために環境にも置いておく。
 CFLAGS="-fPIC"
 CXXFLAGS="-fPIC"
 export CFLAGS CXXFLAGS
