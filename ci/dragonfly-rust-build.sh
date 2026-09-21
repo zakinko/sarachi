@@ -147,6 +147,11 @@ tar xf "$SRC"
 cd "rustc-${VERSION}-src"
 
 say "config.toml を書く"
+# この heredoc は変数を展開させるので引用していない。つまり中身は shell に
+# 読まれる。backtick を書くと command substitution として実行され、comment の
+# つもりの行が静かに消える。実際にやった: 失敗した log を貼った comment の
+# backtick で rustc -vV が走り、後から入れた comment では引用が閉じずに
+# Syntax error になった。ここに backtick とドル記号を書かないこと。
 cat > config.toml <<CONF
 [llvm]
 # 同梱の LLVM を建てると 4 core では二時間以上かかり、job の上限に収まらない。
@@ -157,7 +162,7 @@ download-ci-llvm = false
 # 配る物としてそれは困るし、次の段で実際に困った: llvm19 に動的 link した
 # 1.86 を、llvm20 しか入っていない 1.87 の run で種にしたら
 #
-#   error: process didn't exit successfully: `.../bin/rustc -vV` (exit status: 1)
+#   error: process didn't exit successfully: .../bin/rustc -vV (exit status: 1)
 #
 # で止まった。静的なら種にも配布物にも、置き場の LLVM が要らない。
 
@@ -199,7 +204,7 @@ llvm-config = "${LLVM_CONFIG}"
 # -fPIC が付かない。cargo の link で libssh2-sys がこうなる。
 #
 #   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
-#     `.rodata.str1.1' can not be used when making a PIE object
+#     .rodata.str1.1 can not be used when making a PIE object
 #
 # 環境変数の CFLAGS では届かない。bootstrap が target ごとに
 # CFLAGS_<triple> を立てるので、そちらが素の CFLAGS より強い。ここに書く。
@@ -233,7 +238,7 @@ export LIBRARY_PATH
 # -fPIC が付かない。cargo の link で libssh2-sys がこうなる。
 #
 #   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
-#     `.rodata.str1.1' can not be used when making a PIE object
+#     .rodata.str1.1 can not be used when making a PIE object
 #
 # 同じ物を要求する -sys crate は他にもある（libgit2 blake3 psm）ので、
 # 個別にではなく CFLAGS で一度に渡す。

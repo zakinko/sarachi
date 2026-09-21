@@ -8,12 +8,14 @@ on:
   push:
     paths:
       - 'crates/**'
+      - 'ci/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/test.yml'
   pull_request:
     paths:
       - 'crates/**'
+      - 'ci/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/test.yml'
@@ -36,6 +38,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # 書式と lint と試験を一つの job にまとめる。別々にすると
       # それぞれが runner の起動分を払い、しかも一分未満でも一分に切り上がる。
+      # BSD の VM で走る script は一回 30 分から一時間かかる。静的に
+      # 見える分はここで落としておかないと、書き間違い一つで一時間消える。
+      - run: sh ci/shell-lint.sh
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
