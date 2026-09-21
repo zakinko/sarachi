@@ -61,10 +61,10 @@ jobs:
           usesh: true
           # rust は種として要る。bootstrap_url を渡した場合は使わないが、
           # 入れておいても害は無く、条件分岐を prepare に持ち込まずに済む
-          # LLVM は build script が版から決めるが、prepare では式が使えない。
-          # 両方入れておく。llvm19 と llvm20 で 700MB ほどだが、間違った版で
-          # 22 分かけて落ちるより安い。
-          prepare: pkg install -y rust llvm19 llvm20 cmake ninja git python3 curl pkgconf
+          # LLVM はここで入れない。版によって変わるうえ、合わない版が
+          # 置いてあると lld の build step が CMake の find_package で
+          # そちらを拾う。build script が版を決めてから、合う物だけを入れる。
+          prepare: pkg install -y rust cmake ninja git python3 curl pkgconf
           run: |
             set -e
             sh ci/dragonfly-rust-build.sh \

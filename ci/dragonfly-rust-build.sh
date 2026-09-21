@@ -39,6 +39,15 @@ if [ -z "$LLVMPKG" ]; then
 	esac
 fi
 echo "### rustc $VERSION には $LLVMPKG を使う"
+
+# LLVM はここで入れる。prepare で両方入れてはいけない。
+#
+# rust の lld を建てる step は [target.*] の llvm-config を使わず、CMake の
+# find_package で自分で LLVM を探す。llvm19 と llvm20 を両方入れた状態で
+# 1.86.0 を建てたら、config.toml には llvm-config19 と書いてあるのに
+# lld の compile だけが -I/usr/local/llvm20/include を拾って落ちた。
+# 合う版だけを置けば、拾い間違えようがない。
+pkg install -y "$LLVMPKG"
 if [ -n "$BOOTSTRAP_URL" ] && [ -z "$BOOTSTRAP_VER" ]; then
 	echo "置き場を渡すなら、種の版も要る" >&2
 	exit 1
@@ -134,6 +143,10 @@ prefix = "/usr/local"
 
 [rust]
 channel = "stable"
+# lld は建てない。DragonFly は system の linker を使うので要らないうえ、
+# lld の build step だけが外の LLVM を自分で探しに行って版を拾い違える。
+# 要らない物のために失敗する面を持たない。
+lld = false
 # 配る物に debug 情報は要らない。build 時間と成果物の大きさの両方に効く。
 debug = false
 debug-assertions = false
