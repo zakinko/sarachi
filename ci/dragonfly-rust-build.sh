@@ -73,8 +73,15 @@ SRC=rustc-${VERSION}-src.tar.xz
 curl -sfL -O "https://static.rust-lang.org/dist/${SRC}"
 curl -sfL -O "https://static.rust-lang.org/dist/${SRC}.sha256"
 # 配布物の取り違えは build の何時間も先で妙な形で出るので、ここで止める。
-sha256 -c "$(awk '{print $1}' "${SRC}.sha256")" "$SRC" \
-	|| { echo "sha256 が合わない" >&2; exit 1; }
+# DragonFly の sha256 は FreeBSD と違って -c を持たない (getopt は
+# "hb:e:pqrs:tx")。-q で値を出して自分で比べる。
+WANT=$(awk '{print $1}' "${SRC}.sha256")
+GOT=$(sha256 -q "$SRC")
+if [ "$WANT" != "$GOT" ]; then
+	echo "sha256 が合わない: 期待 $WANT 実際 $GOT" >&2
+	exit 1
+fi
+echo "  sha256 一致"
 tar xf "$SRC"
 cd "rustc-${VERSION}-src"
 
