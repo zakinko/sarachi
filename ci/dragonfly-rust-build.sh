@@ -14,7 +14,31 @@ BOOTSTRAP_URL=$3
 BOOTSTRAP_VER=$4
 
 [ -n "$VERSION" ] || { echo "版が要る" >&2; exit 1; }
-[ -n "$LLVMPKG" ] || { echo "LLVM の package 名が要る" >&2; exit 1; }
+
+# LLVM の版は rustc の版が決める。手で渡させると間違える。実際に一度
+# 間違えた: 1.86.0 に llvm20 を渡したら、同梱の lld が
+#
+#   lld/Common/DWARF.cpp:97: error: no matching function for call to
+#     'getFileLineInfoForAddress' (候補は 5 引数、こちらは 4 引数)
+#
+# で 22 分かけて落ちた。lld の source は同梱 LLVM の API に合わせて書かれて
+# いて、rustc 本体と違って版差の #if を持っていない。
+#
+# DPorts が配る binary がちょうど合う版を持っている。
+if [ -z "$LLVMPKG" ]; then
+	case $VERSION in
+	1.86.*) LLVMPKG=llvm19 ;;  # 同梱 19.1.7  DPorts llvm19-19.1.7_1
+	1.87.*) LLVMPKG=llvm20 ;;  # 同梱 20.1.1  DPorts llvm20-20.1.1
+	1.88.*) LLVMPKG=llvm20 ;;  # 同梱 20.1.5  DPorts は 20.1.1（major/minor 一致）
+	*)
+		echo "$VERSION に合う LLVM が表に無い。" >&2
+		echo "rust-lang/llvm-project の cmake/Modules/LLVMVersion.cmake で" >&2
+		echo "同梱の版を見て、表に足すこと。" >&2
+		exit 1
+		;;
+	esac
+fi
+echo "### rustc $VERSION には $LLVMPKG を使う"
 if [ -n "$BOOTSTRAP_URL" ] && [ -z "$BOOTSTRAP_VER" ]; then
 	echo "置き場を渡すなら、種の版も要る" >&2
 	exit 1
