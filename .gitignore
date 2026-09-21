@@ -3,3 +3,4 @@ target/
 *.img.zst
 *.iso
 .ci-libkrimes/
+.ci-crypt/

@@ -63,6 +63,7 @@ jobs:
             cargo test --workspace
             sh ci/libkrimes-check.sh
 
+  # FreeBSD は geli の実機でもある。暗号層の破壊的な試験をここで走らせる。
   freebsd:
     runs-on: ubuntu-latest
     steps:
@@ -77,6 +78,9 @@ jobs:
             rustc --version
             cargo test --workspace
             sh ci/libkrimes-check.sh
+            # 鍵を破棄した後に開けてしまう退行が入っても、他の試験は全て
+            # 通ったままになる。消去は目で見て分からないので、ここで守る。
+            sh ci/crypt-real.sh
 
   # DragonFly が配る rust は 1.85 と古く、現行の crate 生態系に追いつかない
   # ことを実機で確かめてある。ここで見たいのは当て物が効くかだけなので、
