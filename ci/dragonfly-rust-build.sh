@@ -57,11 +57,11 @@ echo "### rustc $VERSION には $LLVMPKG を使う"
 #   /usr/libexec/binutils234/elf/ld.bfd: cannot find -lzstd
 #
 # 動的 link だった間は libLLVM.so の側が抱えていたので表に出なかった。
-pkg install -y "$LLVMPKG" zstd
+pkg install -y "$LLVMPKG" zstd libssh2
 
 # 入った物が在ることをここで確かめる。無いまま建て始めると、気づくのは
 # 20 分以上あとの link 段階になる。
-for lib in libzstd.a libzstd.so; do
+for lib in libzstd.a libzstd.so libssh2.so; do
 	[ -e "/usr/local/lib/$lib" ] || { echo "/usr/local/lib/$lib が無い" >&2; exit 1; }
 done
 echo "  zstd: $(ls /usr/local/lib/libzstd.* | tr '\n' ' ')"
@@ -273,6 +273,27 @@ export LIBRARY_PATH
 #
 # bootstrap はその環境変数を読んで自分の flag に継ぎ足す作りになっている
 # （src/bootstrap/src/core/builder/cargo.rs）。同じ名前で渡せば通る。
+# libssh2 は package の物を使い、C を建てさせない。
+#
+# cargo が抱える libssh2-sys は cc::Build で C を建てるが、その object に
+# -fPIC が付かず、DragonFly が既定で作る PIE と衝突する。
+#
+#   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
+#     .rodata.str1.1 can not be used when making a PIE object
+#
+# -fPIC を渡す道は三つ試して、どれも届かなかった。素の CFLAGS は bootstrap が
+# 立てる CFLAGS_<triple> に負ける。その名前で渡しても tool を建てる経路では
+# 効かない。config.toml の [target.*] の cc を包んでも同じだった。
+#
+# build.rs が LIBSSH2_SYS_USE_PKG_CONFIG という逃げ道を持っている。これは
+# build script が環境から直接読むので、bootstrap が上書きする余地が無い。
+# 建てないものは壊れない。
+#
+# 代償として、出来た cargo は package の libssh2 を要る。rustc の方は
+# 自己完結のままなので、そちらは影響を受けない。
+LIBSSH2_SYS_USE_PKG_CONFIG=1
+export LIBSSH2_SYS_USE_PKG_CONFIG
+
 TU=$(echo "$TRIPLE" | tr - _)
 eval "CFLAGS_${TU}=-fPIC; export CFLAGS_${TU}"
 eval "CXXFLAGS_${TU}=-fPIC; export CXXFLAGS_${TU}"
