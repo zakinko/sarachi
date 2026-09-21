@@ -1,7 +1,7 @@
 //! 暗号層。
 //!
 //! ブロック層で暗号化し、鍵を破棄して消す、という一つの形で全標的を覆う。
-//! 実装は OS ごとに違う（Linux は LUKS、FreeBSD と DragonFly は geli、
+//! 実装は OS ごとに違う（Linux は LUKS、FreeBSD と GhostBSD は geli、
 //! NetBSD は cgd、OpenBSD は softraid crypto）が、上から見た振る舞いは同じに
 //! なるよう trait にしてある。**消去の側のコードが OS ごとに分岐しない**のが
 //! この形の一番の利点で、消去は設計全体の土台なので、そこを揃える価値がある。
@@ -33,7 +33,13 @@ pub trait Crypt {
     /// 開いて、中身が現れたパスを返す。
     fn open(&self, device: &Path, key: &[u8], name: &str) -> Result<PathBuf>;
 
-    fn close(&self, name: &str) -> Result<()>;
+    /// 閉じる。`open` が返した path をそのまま渡す。
+    ///
+    /// 名前ではなく path を受けるのは、閉じるのに要る物が OS ごとに違うため。
+    /// LUKS は `/dev/mapper/<name>` の name で閉じるが、geli は `.eli` を
+    /// 外した元の provider で detach する。開いた側が返した物を渡せば、
+    /// それぞれが自分に要る形を取り出せる。
+    fn close(&self, mapped: &Path) -> Result<()>;
 
     /// crypto-erase。**これが消去の本体。**
     ///
@@ -53,10 +59,7 @@ pub trait Crypt {
 pub fn for_kind(kind: RootKind) -> Result<Box<dyn Crypt>> {
     match kind {
         RootKind::LinuxLuks => Ok(Box::new(Luks)),
-        RootKind::FreeBsdZfs | RootKind::FreeBsdUfs => bail!(
-            "geli はまだ実装していない（FreeBSD / GhostBSD / DragonFly）。\n\
-             実機で確かめるまで入れない"
-        ),
+        RootKind::FreeBsdZfs | RootKind::FreeBsdUfs => Ok(Box::new(Geli)),
         RootKind::NetBsdCgd | RootKind::NetBsdFfs => {
             bail!("cgd はまだ実装していない（NetBSD）。実機で確かめるまで入れない")
         }
@@ -79,54 +82,65 @@ pub fn generate_key() -> Result<Vec<u8>> {
     Ok(key)
 }
 
+/// 外部の道具を一つ走らせる。失敗したら stderr を添えて返す。
+///
+/// LUKS と geli で同じ形なので、ここに一つ置いて両方から使う。
+fn run(exe: &str, what: &str, args: &[&str], stdin: Option<&[u8]>) -> Result<()> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut c = Command::new(exe);
+    c.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if stdin.is_some() {
+        c.stdin(Stdio::piped());
+    }
+    let mut child = c
+        .spawn()
+        .with_context(|| format!("{exe} を起動できない（{what}）"))?;
+    if let (Some(data), Some(mut s)) = (stdin, child.stdin.take()) {
+        s.write_all(data)?;
+        drop(s);
+    }
+    let out = child.wait_with_output()?;
+    if !out.status.success() {
+        bail!(
+            "{what} に失敗（{}）\n  {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+/// 候補のうち最初に在るものを返す。無ければ名前だけ返して PATH に任せる。
+///
+/// 絶対パスで呼ぶのは、initramfs の PATH が当てにできないため。
+/// `Command::new("cryptsetup")` は spawn 時に ENOENT を返し、その誤りは
+/// 「道具が壊れている」とも「ライブラリが足りない」とも読めるので、
+/// 原因にたどり着くのに手間がかかる。
+fn first_existing(cands: &[&'static str], fallback: &'static str) -> &'static str {
+    for p in cands {
+        if Path::new(p).exists() {
+            return p;
+        }
+    }
+    fallback
+}
+
 // ---------------------------------------------------------------- LUKS
 
 pub struct Luks;
 
 impl Luks {
-    /// 絶対パスで呼ぶ。initramfs の PATH は当てにできず、
-    /// `Command::new("cryptsetup")` は spawn 時に ENOENT を返す。その誤りは
-    /// 「cryptsetup が壊れている」とも「ライブラリが足りない」とも読めるので、
-    /// 原因にたどり着くのに手間がかかる。
     fn exe() -> &'static str {
-        for p in [
-            "/sbin/cryptsetup",
-            "/usr/sbin/cryptsetup",
-            "/bin/cryptsetup",
-        ] {
-            if Path::new(p).exists() {
-                return p;
-            }
-        }
-        "cryptsetup"
-    }
-
-    fn run(what: &str, args: &[&str], stdin: Option<&[u8]>) -> Result<()> {
-        use std::io::Write;
-        use std::process::Stdio;
-
-        let exe = Self::exe();
-        let mut c = Command::new(exe);
-        c.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
-        if stdin.is_some() {
-            c.stdin(Stdio::piped());
-        }
-        let mut child = c
-            .spawn()
-            .with_context(|| format!("{exe} を起動できない（{what}）"))?;
-        if let (Some(data), Some(mut s)) = (stdin, child.stdin.take()) {
-            s.write_all(data)?;
-            drop(s);
-        }
-        let out = child.wait_with_output()?;
-        if !out.status.success() {
-            bail!(
-                "{what} に失敗（{}）\n  {}",
-                out.status,
-                String::from_utf8_lossy(&out.stderr).trim()
-            );
-        }
-        Ok(())
+        first_existing(
+            &[
+                "/sbin/cryptsetup",
+                "/usr/sbin/cryptsetup",
+                "/bin/cryptsetup",
+            ],
+            "cryptsetup",
+        )
     }
 }
 
@@ -137,7 +151,8 @@ impl Crypt for Luks {
 
     fn format(&self, device: &Path, key: &[u8]) -> Result<()> {
         let dev = device.to_string_lossy().to_string();
-        Self::run(
+        run(
+            Self::exe(),
             "LUKS2 の作成",
             &[
                 "luksFormat",
@@ -160,7 +175,8 @@ impl Crypt for Luks {
 
     fn open(&self, device: &Path, key: &[u8], name: &str) -> Result<PathBuf> {
         let dev = device.to_string_lossy().to_string();
-        Self::run(
+        run(
+            Self::exe(),
             "LUKS の展開",
             &["open", "--key-file", "-", &dev, name],
             Some(key),
@@ -168,19 +184,112 @@ impl Crypt for Luks {
         Ok(Path::new("/dev/mapper").join(name))
     }
 
-    fn close(&self, name: &str) -> Result<()> {
-        Self::run("LUKS の閉鎖", &["close", name], None)
+    fn close(&self, mapped: &Path) -> Result<()> {
+        let name = mapped
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        run(Self::exe(), "LUKS の閉鎖", &["close", &name], None)
     }
 
     fn erase(&self, device: &Path) -> Result<()> {
         let dev = device.to_string_lossy().to_string();
-        Self::run("crypto-erase", &["luksErase", "--batch-mode", &dev], None)
+        run(
+            Self::exe(),
+            "crypto-erase",
+            &["luksErase", "--batch-mode", &dev],
+            None,
+        )
     }
 
     fn is_container(&self, device: &Path) -> bool {
         let dev = device.to_string_lossy().to_string();
         Command::new(Self::exe())
             .args(["isLuks", &dev])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+}
+
+// ---------------------------------------------------------------- geli
+
+/// FreeBSD と GhostBSD の geli。
+///
+/// DragonFly もここに落ちてくるが、**DragonFly では確かめていない。**
+/// DragonFly は geli ではなく `dm_target_crypt`（LUKS 互換）を持つという
+/// 情報があり、本当ならこの実装ではなく `Luks` を通すのが正しい。実機で
+/// 確かめるまで、DragonFly でこれを使ってはいけない。
+pub struct Geli;
+
+impl Geli {
+    fn exe() -> &'static str {
+        first_existing(&["/sbin/geli", "/usr/sbin/geli"], "geli")
+    }
+
+    /// geli は `.eli` を足した provider を作る。元の provider に戻す。
+    fn provider(mapped: &Path) -> PathBuf {
+        let s = mapped.to_string_lossy();
+        match s.strip_suffix(".eli") {
+            Some(base) => PathBuf::from(base),
+            None => mapped.to_path_buf(),
+        }
+    }
+}
+
+impl Crypt for Geli {
+    fn name(&self) -> &'static str {
+        "geli (AES-XTS 256)"
+    }
+
+    fn format(&self, device: &Path, key: &[u8]) -> Result<()> {
+        let dev = device.to_string_lossy().to_string();
+        run(
+            Self::exe(),
+            "geli の作成",
+            &[
+                "init",
+                // 控えを作らせない。既定では metadata の控えが
+                // /var/backups/<provider>.eli に落ちるが、`geli kill` は
+                // それを消さない。控えが残っていると鍵を破棄しても復号
+                // できてしまい、crypto-erase が消去として成立しなくなる。
+                // 消去は設計の土台なので、ここは落としてはいけない。
+                "-B", "none",
+                // パスフレーズは持たせない。鍵は鍵ファイルだけ。
+                "-P", "-K", "-", "-e", "AES-XTS", "-l", "256", "-s", "4096", &dev,
+            ],
+            Some(key),
+        )
+    }
+
+    fn open(&self, device: &Path, key: &[u8], _name: &str) -> Result<PathBuf> {
+        // name は使わない。geli は名前を選ばせず、常に <provider>.eli になる。
+        let dev = device.to_string_lossy().to_string();
+        run(
+            Self::exe(),
+            "geli の展開",
+            &["attach", "-p", "-k", "-", &dev],
+            Some(key),
+        )?;
+        Ok(PathBuf::from(format!("{dev}.eli")))
+    }
+
+    fn close(&self, mapped: &Path) -> Result<()> {
+        let dev = Self::provider(mapped).to_string_lossy().to_string();
+        run(Self::exe(), "geli の閉鎖", &["detach", &dev], None)
+    }
+
+    fn erase(&self, device: &Path) -> Result<()> {
+        let dev = device.to_string_lossy().to_string();
+        // kill は metadata の鍵を潰す。上書きではないので SD や SSD でも
+        // 成立する。
+        run(Self::exe(), "crypto-erase", &["kill", &dev], None)
+    }
+
+    fn is_container(&self, device: &Path) -> bool {
+        let dev = device.to_string_lossy().to_string();
+        Command::new(Self::exe())
+            .args(["dump", &dev])
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -205,8 +314,6 @@ mod tests {
         // 黙って別の手を使ってはいけない。消去は取り返しがつかないので、
         // 確かめていない経路は通さない。
         for k in [
-            RootKind::FreeBsdZfs,
-            RootKind::FreeBsdUfs,
             RootKind::NetBsdCgd,
             RootKind::NetBsdFfs,
             RootKind::OpenBsdData,
@@ -219,6 +326,90 @@ mod tests {
                 e.to_string().contains("実装していない"),
                 "{k:?} の断り方: {e}"
             );
+        }
+    }
+
+    #[test]
+    fn freebsdは実装がある() {
+        for k in [RootKind::FreeBsdZfs, RootKind::FreeBsdUfs] {
+            let c = match for_kind(k) {
+                Ok(c) => c,
+                Err(e) => panic!("{k:?} で実装が見つからない: {e}"),
+            };
+            assert_eq!(c.name(), "geli (AES-XTS 256)");
+        }
+    }
+
+    #[test]
+    fn geliは開いた先から元のproviderに戻せる() {
+        // close は open が返した path を受ける。geli は名前を選ばせず
+        // <provider>.eli になるので、detach するには .eli を外す必要がある。
+        assert_eq!(
+            Geli::provider(Path::new("/dev/ada0p3.eli")),
+            PathBuf::from("/dev/ada0p3")
+        );
+        // 既に外れている物を渡されても壊れない。
+        assert_eq!(
+            Geli::provider(Path::new("/dev/ada0p3")),
+            PathBuf::from("/dev/ada0p3")
+        );
+    }
+
+    /// 実機での破壊的な試験。
+    ///
+    ///     SARACHI_TEST_DEVICE=/dev/md0 cargo test -- --ignored
+    ///
+    /// **渡したデバイスの中身は失われる。** 既定では走らない。
+    ///
+    /// 命令列が通ることと、消えたことは別なので、ここでは後者を見る。
+    /// 鍵を破棄した後に同じ鍵で開けてしまわないこと——それが crypto-erase が
+    /// 消去として成立している証拠で、設計全体がそこに乗っている。
+    #[test]
+    #[ignore]
+    fn 実機で鍵を破棄すると開かなくなる() {
+        use std::io::Write;
+
+        let dev = match std::env::var("SARACHI_TEST_DEVICE") {
+            Ok(d) => d,
+            Err(_) => panic!("SARACHI_TEST_DEVICE にデバイスを渡すこと"),
+        };
+        let dev = Path::new(&dev);
+
+        let kind = if cfg!(target_os = "freebsd") {
+            RootKind::FreeBsdUfs
+        } else if cfg!(target_os = "linux") {
+            RootKind::LinuxLuks
+        } else {
+            panic!("この OS の暗号層はまだ実装していない");
+        };
+        let cr = for_kind(kind).expect("暗号層が要る");
+        println!("{} を {} で試す", dev.display(), cr.name());
+
+        let key = generate_key().expect("鍵");
+        cr.format(dev, &key).expect("容器を作れない");
+        assert!(cr.is_container(dev), "作った直後に容器だと分からない");
+
+        let mapped = cr.open(dev, &key, "sarachi-test").expect("開けない");
+        {
+            // geli は 4096 の sector で作るので、その倍数で書く。
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .open(&mapped)
+                .expect("開いた先に書けない");
+            f.write_all(&[0xa5u8; 4096]).expect("書き込み");
+            f.sync_all().expect("sync");
+        }
+        cr.close(&mapped).expect("閉じられない");
+
+        cr.erase(dev).expect("crypto-erase できない");
+
+        // ここが本番。同じ鍵を持っていても開いてはいけない。
+        match cr.open(dev, &key, "sarachi-test") {
+            Ok(p) => {
+                let _ = cr.close(&p);
+                panic!("鍵を破棄したのに開いた。crypto-erase が成立していない");
+            }
+            Err(e) => println!("期待どおり開かない: {e}"),
         }
     }
 

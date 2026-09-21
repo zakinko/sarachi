@@ -633,6 +633,52 @@ vendor した crate を書き換えても cargo は拒まない。
 - **回復環境は対象外。** 自己完結した initramfs なのでパッケージにする必要がない。
   pkgsrc が効くのはエージェント側
 
+### geli を実装した（2026-09-21）— BSD 側の一つ目が埋まった
+
+`for_kind` が返せるのは `Luks` だけだった。12 標的を挙げておきながら、端から
+端まで通るのは Linux だけで、BSD 五つはどれも provisioning が始まらない状態
+だった。そのうち FreeBSD と GhostBSD を埋めた。
+
+実機（FreeBSD 15.1-RELEASE-p3、`mdconfig` の vnode provider）で、**命令列では
+なく Rust のコードそのもの**を走らせて確かめた。
+
+```
+/dev/md0 を geli (AES-XTS 256) で試す
+期待どおり開かない: geli の展開 に失敗（exit status: 1）
+  geli: Cannot read metadata from /dev/md0: Invalid argument.
+test crypt::tests::実機で鍵を破棄すると開かなくなる ... ok
+```
+
+format → `is_container` → open → 4096 バイト書く → close → erase → 同じ鍵で
+open が失敗、まで一続きで通した。crypto-erase が消去として成立していること、
+つまり**鍵を破棄した後は同じ鍵ファイルを持っていても開かない**ことが、
+LUKS に続いて geli でも取れた。
+
+**`-B none` を必ず渡す。** `geli init` は既定で metadata の控えを
+`/var/backups/<provider>.eli` に落とすが、`geli kill` はそれを消さない。
+控えが残っていると鍵を破棄しても復号できてしまい、crypto-erase が消去として
+成立しなくなる。消去は設計の土台なので、ここは落とせない。控えが出ないことも
+実機で確かめた。
+
+**`close` は名前ではなく `open` が返した path を受ける形に変えた。** LUKS は
+`/dev/mapper/<name>` の name で閉じるが、geli は名前を選ばせず常に
+`<provider>.eli` になり、detach には `.eli` を外した元の provider が要る。
+開いた側が返した物を渡せば、それぞれが自分に要る形を取り出せる。
+
+破壊的な試験なので既定では走らない。
+
+```
+SARACHI_TEST_DEVICE=/dev/md0 cargo test -- --ignored
+```
+
+**DragonFly はまだ分からない。** `RootKind::FreeBsdZfs` / `FreeBsdUfs` は
+DragonFly もここへ落とすが、DragonFly は geli ではなく `dm_target_crypt`
+（LUKS 互換）を持つという情報がある。本当なら `Geli` ではなく `Luks` を通すのが
+正しく、型の割り当てが間違っていることになる。実機で確かめるまで、DragonFly で
+これを使ってはいけない。コードにもそう書いてある。
+
+残るは cgd（NetBSD）と softraid crypto（OpenBSD）。
+
 ### DragonFly 実機での結果（2026-09-18）— 前言を二つ訂正
 
 `zakinko/netbsd-ci-images` の image で実機の DragonFly 6.4.2-RELEASE を立て、

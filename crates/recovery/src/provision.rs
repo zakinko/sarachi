@@ -188,7 +188,7 @@ pub fn run(plan: &Plan, trusted: &VerifyingKey) -> Result<()> {
     println!("   {} MiB", n / 1024 / 1024);
 
     println!("5. 閉じる");
-    cr.close(MAPPER_NAME)?;
+    cr.close(&mapped)?;
 
     println!("\n導入が完了した。");
     println!("  root は台ごとに異なる鍵で暗号化されている。");
