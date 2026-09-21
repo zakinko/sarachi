@@ -50,7 +50,14 @@ echo "### rustc $VERSION には $LLVMPKG を使う"
 # config.toml には llvm-config19 と書いてあるのに lld の compile だけが
 # -I/usr/local/llvm20/include を拾って落ちた。今は lld を建てないように
 # してあるが、置かないのが一番確実。
-pkg install -y "$LLVMPKG"
+#
+# zstd も要る。静的に link すると LLVM が要求する外部のライブラリが
+# そのまま link 行に出てくるが、base に zstd は無い。
+#
+#   /usr/libexec/binutils234/elf/ld.bfd: cannot find -lzstd
+#
+# 動的 link だった間は libLLVM.so の側が抱えていたので表に出なかった。
+pkg install -y "$LLVMPKG" zstd
 if [ -n "$BOOTSTRAP_URL" ] && [ -z "$BOOTSTRAP_VER" ]; then
 	echo "置き場を渡すなら、種の版も要る" >&2
 	exit 1
