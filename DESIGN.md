@@ -856,15 +856,15 @@ DragonFly と GhostBSD に arm64 が無いのは、それぞれの公式情報�
 つまり「vmactions は TCG だから遅い」は、ホストと arch が違うゲスト
 （aarch64, riscv64, sparc64, ...）にしか当てはまらない。
 
-確認の手順は 手順 の「Which OS images vmactions actually has」に
-ある。conf は `vmactions/<os>-vm/contents/conf`、image は
-`anyvm-org/<os>-builder` の release asset（タグは `v<BUILDER_VERSION>`）。
-`vmactions/<os>-builder` は古いので見ないこと。
+確認は記憶ではなく repo に訊く。conf は `vmactions/<os>-vm/contents/conf`、
+image は `anyvm-org/<os>-builder` の release asset で、**タグには `v` が付く**
+（`BUILDER_VERSION` の値をそのまま貼ると 404 が返り、それが「この release は
+無い」に見えてしまう）。`vmactions/<os>-builder` は古いので見ないこと。
 
 **ただし CI は自動で足さない。** このリポジトリはまだ remote が無く、
 CI を足すかどうかはユーザの判断。`vmactions/*` は起動と導入で 8〜12 分かかる
 高い部類なので、入れるなら既定ブランチへの push と `workflow_dispatch` と
-schedule に限り、PR の push ごとには回さないこと（手順 の CI minutes を参照）。
+schedule に限り、PR の push ごとには回さないこと。
 
 ### 既知の罠
 
