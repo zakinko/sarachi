@@ -219,6 +219,17 @@ export RUSTFLAGS_BOOTSTRAP RUSTFLAGS_NOT_BOOTSTRAP
 # cc が link するときにも効かせる。
 LIBRARY_PATH=/usr/local/lib
 export LIBRARY_PATH
+# DragonFly は既定で PIE を作るが、cc crate が建てる C の source には
+# -fPIC が付かない。cargo の link で libssh2-sys がこうなる。
+#
+#   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
+#     `.rodata.str1.1' can not be used when making a PIE object
+#
+# 同じ物を要求する -sys crate は他にもある（libgit2 blake3 psm）ので、
+# 個別にではなく CFLAGS で一度に渡す。
+CFLAGS="-fPIC"
+CXXFLAGS="-fPIC"
+export CFLAGS CXXFLAGS
 LD_LIBRARY_PATH=$BOOT/lib:/usr/lib/gcc80
 export LD_LIBRARY_PATH
 python3 x.py dist rustc rust-std cargo
