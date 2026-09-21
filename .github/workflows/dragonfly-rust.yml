@@ -80,7 +80,11 @@ jobs:
           # LLVM はここで入れない。版によって変わるうえ、合わない版が
           # 置いてあると lld の build step が CMake の find_package で
           # そちらを拾う。build script が版を決めてから、合う物だけを入れる。
-          prepare: pkg install -y rust cmake ninja git python3 curl pkgconf
+          # bash は rust の install.sh のために要る。あれは
+          # #!/usr/bin/env bash で始まるが DragonFly の base に bash は無い。
+          # 二段目以降で種を入れるときだけ効き、一段目は pkg の rust を
+          # 使うので install.sh を呼ばず、そこでは表に出なかった。
+          prepare: pkg install -y rust bash cmake ninja git python3 curl pkgconf
           run: |
             set -e
             # 種の置き場は shell で組み立てる。式の中で引用を入れ子にすると
