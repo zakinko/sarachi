@@ -573,7 +573,7 @@ OpenBSD が LibreSSL 4.4 へ進み、`openssl-sys` が追随する前だと落�
 
 ### libhimmelblau を pkgsrc パッケージにした（2026-09-18）
 
-実機（NetBSD 11.0 amd64）で `/usr/pkgsrc/zakinko/libhimmelblau` を起こし、
+NetBSD 11.0/amd64 の実機で `/usr/pkgsrc/zakinko/libhimmelblau` を起こし、
 白紙から 23 分で通るところまで確かめた。`pkglint` は Looks fine。
 
 **なぜ pkgsrc が筋の良い相手だったか。** `libhimmelblau` は Rust のライブラリ
@@ -792,7 +792,7 @@ NetBSD でも root-on-ZFS はできる（sysinst は未対応だが、**我々�
 ramdisk     → rpool を import → rpool/ROOT を /altroot へ → chroot
 ```
 
-NetBSD 11.0/amd64 は `ramdisk-zfsroot.fs` を同梱する。実機 で `zfs.kmod` と
+NetBSD 11.0/amd64 は `ramdisk-zfsroot.fs` を同梱する。実機で `zfs.kmod` と
 `solaris.kmod` が base にあることは確認した。
 
 **これは我々の構造とそのまま噛み合う。** 要求は「ブートローダが読める領域に
@@ -825,7 +825,7 @@ Rust は未導入。
 
 落ちる 3 つはエミュレーション（qemu TCG、実用に耐えない遅さ）か実機が要る。
 ただし 3 つとも**後回しにできる**: GhostBSD は FreeBSD 派生で FreeBSD/arm64 の成果がほぼ乗り、
-DragonFly と armhf は x86 機（実機 / 別の実機）か実 Pi にまとめて当てればよい。
+DragonFly と armhf は手元の x86 機か実 Pi にまとめて当てればよい。
 → **arm64 先行で 9 割方が進み、残り 3 つを最後に一括**。
 
 ### amd64 側は vmactions で埋まる（2026-09-17 実査）

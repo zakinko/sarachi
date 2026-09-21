@@ -65,7 +65,7 @@ NetBSD・DragonFly・OpenBSD で走らせていないのは、それらが選ぶ
 
 ### NetBSD は実機で、pkgsrc の中から確かめた（2026-09-18）
 
-実機（NetBSD 11.0 amd64）で `/usr/pkgsrc/zakinko/libhimmelblau` を起こし、
+NetBSD 11.0/amd64 の実機で `/usr/pkgsrc/zakinko/libhimmelblau` を起こし、
 この当て物を `pre-configure` で当てて `libhimmelblau` 0.8.41 まで建てた。
 `Hunk #1 succeeded at 125.` を確認し、出来た `.so` に C からリンクして
 実行するところまで通っている。
