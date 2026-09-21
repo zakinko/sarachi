@@ -58,6 +58,13 @@ echo "### rustc $VERSION には $LLVMPKG を使う"
 #
 # 動的 link だった間は libLLVM.so の側が抱えていたので表に出なかった。
 pkg install -y "$LLVMPKG" zstd
+
+# 入った物が在ることをここで確かめる。無いまま建て始めると、気づくのは
+# 20 分以上あとの link 段階になる。
+for lib in libzstd.a libzstd.so; do
+	[ -e "/usr/local/lib/$lib" ] || { echo "/usr/local/lib/$lib が無い" >&2; exit 1; }
+done
+echo "  zstd: $(ls /usr/local/lib/libzstd.* | tr '\n' ' ')"
 if [ -n "$BOOTSTRAP_URL" ] && [ -z "$BOOTSTRAP_VER" ]; then
 	echo "置き場を渡すなら、種の版も要る" >&2
 	exit 1
@@ -196,6 +203,22 @@ say "建てる"
 # Makefile.DragonFly が同じ理由で ld.bfd を指定している。
 LDVER=ld.bfd
 export LDVER
+# pkg の物は /usr/local/lib に入るが、そこは linker の既定の探索路ではない。
+# 静的 LLVM が要求する -lzstd がここで見つからず
+#
+#   ld.bfd: cannot find -lzstd
+#
+# になる。DPorts の lang/rust が外の LLVM を使うときに同じことをしている
+# （PORT_LLVM_MAKE_ENV= RUSTFLAGS="-Lnative=${LOCALBASE}/lib"）。
+RUSTFLAGS="-Lnative=/usr/local/lib"
+export RUSTFLAGS
+# bootstrap は自分の段ごとに RUSTFLAGS を組み直すので、そちらにも渡す。
+RUSTFLAGS_BOOTSTRAP=$RUSTFLAGS
+RUSTFLAGS_NOT_BOOTSTRAP=$RUSTFLAGS
+export RUSTFLAGS_BOOTSTRAP RUSTFLAGS_NOT_BOOTSTRAP
+# cc が link するときにも効かせる。
+LIBRARY_PATH=/usr/local/lib
+export LIBRARY_PATH
 LD_LIBRARY_PATH=$BOOT/lib:/usr/lib/gcc80
 export LD_LIBRARY_PATH
 python3 x.py dist rustc rust-std cargo
