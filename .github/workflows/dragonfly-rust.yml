@@ -52,6 +52,10 @@ jobs:
     runs-on: ubuntu-latest
     # 六時間の上限に当たって何も残らないより、手前で切って log を残したい
     timeout-minutes: 345
+    # 前の段の artifact を別の run から降ろすのに要る。
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
 
@@ -69,8 +73,10 @@ jobs:
         with:
           release: '6.4.2'
           usesh: true
-          # rust は種として要る。bootstrap_url を渡した場合は使わないが、
-          # 入れておいても害は無く、条件分岐を prepare に持ち込まずに済む
+          # 一段目の種になる pkg の rust (1.85.1)。二段目からは前の段の
+          # artifact を使うので要らないが、入れておいても害は無く、
+          # prepare に条件分岐を持ち込まずに済む。
+          #
           # LLVM はここで入れない。版によって変わるうえ、合わない版が
           # 置いてあると lld の build step が CMake の find_package で
           # そちらを拾う。build script が版を決めてから、合う物だけを入れる。
