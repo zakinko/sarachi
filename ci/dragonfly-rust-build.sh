@@ -53,6 +53,12 @@ if [ -n "$BOOTSTRAP_URL" ] && [ -z "$BOOTSTRAP_VER" ]; then
 	exit 1
 fi
 
+# 手元の directory を渡された場合は絶対に直す。この下で作業木へ cd するので、
+# 相対のままだと解決先が変わる。
+if [ -n "$BOOTSTRAP_URL" ] && [ -d "$BOOTSTRAP_URL" ]; then
+	BOOTSTRAP_URL=$(cd "$BOOTSTRAP_URL" && pwd)
+fi
+
 TRIPLE=x86_64-unknown-dragonfly
 OUT=$(pwd)/dist
 # / は 134G あるが、/build は build のために切られた別の partition なので
@@ -83,10 +89,15 @@ if [ -n "$BOOTSTRAP_URL" ]; then
 	BOOT=$WRK/bootstrap
 	mkdir -p "$BOOT" "$WRK/boottar"
 	cd "$WRK/boottar"
-	echo "  ${BOOTSTRAP_URL%/} から ${BOOTSTRAP_VER} を取る"
 	for part in rustc rust-std cargo; do
 		f="${part}-${BOOTSTRAP_VER}-${TRIPLE}.tar.xz"
-		curl -sfL -O "${BOOTSTRAP_URL%/}/${f}"
+		# 置き場は URL でも手元の directory でもよい。段を繋ぐ間は前の段の
+		# artifact を手元に降ろして渡す。公開するのは三段そろってから。
+		if [ -d "$BOOTSTRAP_URL" ]; then
+			cp "$BOOTSTRAP_URL/$f" .
+		else
+			curl -sfL -O "${BOOTSTRAP_URL%/}/${f}"
+		fi
 		tar xf "$f"
 		(cd "${f%.tar.xz}" && ./install.sh --prefix="$BOOT" --disable-ldconfig)
 	done
@@ -135,7 +146,11 @@ cargo = "${CARGO_BIN}"
 python = "python3"
 docs = false
 extended = true
-tools = ["cargo"]
+# rustdoc も出す。次の段の bootstrap は initial_rustc の隣に rustdoc が
+# ある前提で path を組み立てる（bootstrap の initial_rustdoc は
+# initial_rustc.with_file_name("rustdoc")）。実際に呼ばれるかは走らせる step
+# 次第だが、無くて落ちると 40 分が無駄になる。入れる方が安い。
+tools = ["cargo", "rustdoc"]
 vendor = true
 
 [install]

@@ -32,14 +32,14 @@ on:
           表に無い版を試すときだけ渡す
         required: false
         default: ''
-      bootstrap_url:
+      bootstrap_run_id:
         description: >
-          種にする rustc/cargo の置き場。空なら pkg の rust (1.85.1) を使う。
-          二段目からは前の段の成果物を指す
+          種にする rustc を出した、この workflow の前の run の id。
+          空なら pkg の rust (1.85.1) を使う
         required: false
         default: ''
       bootstrap_version:
-        description: '種の版。bootstrap_url を渡すときだけ要る (例 1.86.0)'
+        description: '種の版。bootstrap_run_id を渡すときだけ要る (例 1.86.0)'
         required: false
         default: ''
 
@@ -55,6 +55,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 段を繋ぐ間は artifact で受け渡す。三段そろうまで外へ出さない。
+      - name: 前の段の rustc を降ろす
+        if: inputs.bootstrap_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.bootstrap_run_id }}
+          github-token: ${{ github.token }}
+          path: bootstrap
+          merge-multiple: true
+
       - uses: vmactions/dragonflybsd-vm@v1
         with:
           release: '6.4.2'
@@ -67,10 +77,16 @@ jobs:
           prepare: pkg install -y rust cmake ninja git python3 curl pkgconf
           run: |
             set -e
+            # 種の置き場は shell で組み立てる。式の中で引用を入れ子にすると
+            # YAML と shell の両方に読まれて崩れる。
+            BOOTSRC=''
+            if [ -n '${{ inputs.bootstrap_version }}' ]; then
+              BOOTSRC=bootstrap
+            fi
             sh ci/dragonfly-rust-build.sh \
               '${{ inputs.version }}' \
               '${{ inputs.llvm }}' \
-              '${{ inputs.bootstrap_url }}' \
+              "$BOOTSRC" \
               '${{ inputs.bootstrap_version }}'
 
       - name: 成果物を持ち帰る
