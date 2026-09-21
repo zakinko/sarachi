@@ -8,7 +8,7 @@
 
 use crate::crypt;
 use anyhow::{Context, Result};
-use sarachi_disk::{Layout, Role};
+use sarachi_disk::{Layout, Role, RootKind};
 use sarachi_order::Level;
 use std::fs::OpenOptions;
 use std::io::{Seek, SeekFrom, Write};
@@ -73,10 +73,11 @@ pub fn run(
     disk: &Path,
     size_bytes: u64,
     sector_size: u64,
+    root_kind: RootKind,
     level: Level,
     commit: bool,
 ) -> Result<Report> {
-    let layout = Layout::plan(size_bytes, sector_size)?;
+    let layout = Layout::plan(size_bytes, sector_size, root_kind)?;
     let root = part_path(disk, layout.get(Role::Root).map(|p| p.index).unwrap_or(3));
 
     println!("段階   : {:?}", level);
@@ -113,15 +114,19 @@ pub fn run(
         recovery_destroyed: false,
     };
 
-    // 本体。鍵スロットを破棄すればマスター鍵は復元できない。
-    if crypt::is_luks(&root) {
-        crypt::erase(&root)?;
+    // 本体。鍵を破棄すればマスター鍵は復元できない。
+    let cr = crypt::for_kind(root_kind)?;
+    if cr.is_container(&root) {
+        cr.erase(&root)?;
         r.crypto_erased = true;
-        println!("crypto-erase: 完了（{}）", root.display());
+        println!("crypto-erase: 完了（{} / {}）", cr.name(), root.display());
     } else {
         // 暗号化されていない機体では、鍵の破棄という手が使えない。
         // 黙って成功を返すと消したつもりで消えていないので、はっきり言う。
-        println!("crypto-erase: 対象が LUKS ではない。この機体は鍵の破棄では消せない");
+        println!(
+            "crypto-erase: 対象が {} の容器ではない。鍵の破棄では消せない",
+            cr.name()
+        );
     }
 
     if !level.keeps_recovery() {

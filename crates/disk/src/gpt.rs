@@ -171,13 +171,13 @@ pub fn write_gpt<W: Write + Seek>(layout: &Layout, w: &mut W) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::Role;
+    use crate::layout::{Role, RootKind};
     use std::io::Cursor;
 
     const GIB: u64 = 1024 * 1024 * 1024;
 
     fn written(bytes: u64, ss: u64) -> (Layout, Vec<u8>) {
-        let l = Layout::plan(bytes, ss).unwrap();
+        let l = Layout::plan(bytes, ss, RootKind::LinuxLuks).unwrap();
         let mut c = Cursor::new(vec![0u8; bytes as usize]);
         write_gpt(&l, &mut c).unwrap();
         (l, c.into_inner())
@@ -200,7 +200,7 @@ mod tests {
     fn 二テビバイト超で保護mbrが飽和する() {
         // 32bit LBA に収まらない大きさ。ここで飽和しないと、GPT を知らない
         // 道具から見たディスクの大きさが巻き戻り、末尾が空きに見えてしまう。
-        let l = Layout::plan(4 * 1024 * GIB, 512).unwrap();
+        let l = Layout::plan(4 * 1024 * GIB, 512, RootKind::LinuxLuks).unwrap();
         let mbr = protective_mbr(l.total_sectors);
         assert_eq!(
             u32::from_le_bytes(mbr[458..462].try_into().unwrap()),

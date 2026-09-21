@@ -5,7 +5,7 @@
 //! 例題が実機を壊せてよい理由はない。
 
 use anyhow::{Result, bail};
-use sarachi_disk::{Layout, write_gpt};
+use sarachi_disk::{Layout, RootKind, write_gpt};
 use std::fs::OpenOptions;
 
 fn main() -> Result<()> {
@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     }
 
     let bytes = gib * 1024 * 1024 * 1024;
-    let layout = Layout::plan(bytes, sector)?;
+    let layout = Layout::plan(bytes, sector, RootKind::LinuxLuks)?;
     print!("{}", layout.describe());
 
     let mut f = OpenOptions::new()

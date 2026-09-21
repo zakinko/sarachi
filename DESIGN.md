@@ -732,6 +732,85 @@ initramfs は 2.8 MiB（busybox 643KB + モジュール + 実行体 2.4MB）。
 実行体が太ったのは rustls と証明書を抱えたため。OpenSSL を持ち込まない代償で、
 回復環境全体では十分小さい。
 
+## 暗号層と root の型（2026-09-21）
+
+### 文書と実装が食い違っていたので正す
+
+「OS 抽象層を置く」と書いてあったが、**コードには抽象が無く実装が一つ
+（cryptsetup）あるだけだった**。trait を入れて cryptsetup をその一実装に
+降ろした。
+
+```rust
+pub trait Crypt {
+    fn format(&self, device: &Path, key: &[u8]) -> Result<()>;
+    fn open(&self, device: &Path, key: &[u8], name: &str) -> Result<PathBuf>;
+    fn close(&self, name: &str) -> Result<()>;
+    fn erase(&self, device: &Path) -> Result<()>;
+    fn is_container(&self, device: &Path) -> bool;
+}
+```
+
+`open` が**開いた先のパスを返す**のは、それが OS ごとに違うため。LUKS は
+`/dev/mapper/<name>`、geli は `<device>.eli`、cgd は `/dev/cgd<N>`、OpenBSD は
+新しく現れる `/dev/sd<N>`。呼び出し側では組み立てられない。
+
+**実装していない OS は断る。** 黙って別の手を使わない。消去は取り返しが
+つかないので、確かめていない経路は通さない。試験で固定してある。
+
+### 型 GUID は実行時に決める
+
+**`cfg!(target_os)` では決められない。** 回復環境は常に Linux だが、導入する
+先は FreeBSD や NetBSD でありうる。`RootKind` として実行時の引数にした
+（`--root-kind`）。値は推測ではなく NetBSD src の `sys/sys/disklabel_gpt.h`
+から取った。
+
+| RootKind | GUID |
+|---|---|
+| LinuxLuks | `ca7d7ccb-63ed-4c53-861c-1742536059cc` |
+| FreeBsdZfs | `516e7cba-6ecf-11d6-8ff8-00022d09712b` |
+| FreeBsdUfs | `516e7cb6-6ecf-11d6-8ff8-00022d09712b` |
+| NetBsdCgd | `2db519ec-b10f-11dc-b99b-0019d1879648` |
+| NetBsdFfs | `49f48d5a-b10e-11dc-b99b-0019d1879648` |
+| OpenBsdData | `824cc7a0-36a8-11e3-890a-952519ad3f61` |
+
+**型から暗号化が分かるのは LUKS と cgd だけ。** geli と softraid は下に敷く
+だけで型を変えないので、消す前の判断に型を使えない。
+
+ESP と回復領域の型は載せる物で変わらない。**起動物の置き場は全 OS で同じ形に
+でき、分岐するのは root だけ**というのが、この節の要点になる。
+
+## NetBSD の root-on-ZFS（2026-09-21）
+
+NetBSD でも root-on-ZFS はできる（sysinst は未対応だが、**我々には効かない。
+回復環境そのものが導入器だから**）。
+
+仕組みは「FFS から起動して pivot する」形で、**ブートローダは ZFS を読まない**
+（`/usr/mdec` に `bootxx_zfs` が無いのはそのため）。
+
+```
+ブートローダ → FFS から カーネル + solaris/zfs モジュール + ZFS root ramdisk
+ramdisk     → rpool を import → rpool/ROOT を /altroot へ → chroot
+```
+
+NetBSD 11.0/amd64 は `ramdisk-zfsroot.fs` を同梱する。実機 で `zfs.kmod` と
+`solaris.kmod` が base にあることは確認した。
+
+**これは我々の構造とそのまま噛み合う。** 要求は「ブートローダが読める領域に
+起動物を置く」ことで、それは ESP にカーネルと initramfs を置く今の形と同じ。
+パーティションを増やす必要がない。発想も同じで、ブートローダに賢さを求めず
+RAM 上の小さな環境に任せる。
+
+三つの形が揃った:
+
+| | ブートローダ | root-on-ZFS |
+|---|---|---|
+| FreeBSD / GhostBSD | ZFS を読める | 直接 |
+| NetBSD | 読めない | FFS から起動して ramdisk で pivot |
+| DragonFly / OpenBSD | — | ZFS が無い |
+
+なお cgd と root のファイルシステムは独立なので、cgd の上に ZFS を載せられる。
+「ブロック層の暗号で全標的を覆う」方針は NetBSD でも崩れない。
+
 ## 開発環境（2026-09-16）
 
 ホスト: **Apple M4 / macOS 26.6.2 / arm64**。lima・qemu(aarch64/x86_64)・VMware Fusion あり。

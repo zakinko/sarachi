@@ -8,7 +8,7 @@
 //! 走って取り返しがつかなくなる余地を残すべきではない。
 
 use anyhow::{Context, Result, bail};
-use sarachi_disk::{Layout, write_gpt};
+use sarachi_disk::{Layout, RootKind, write_gpt};
 use std::fs::OpenOptions;
 
 mod block;
@@ -28,17 +28,42 @@ fn usage() -> ! {
   install <device> --manifest <url> --image <url> --key <file> [--commit]
                               署名を検証しながら生のディスクへ書き戻す
                               --resume-from <n> で途中から
-  wipe <device> --level reset|factory|destroy [--commit]
+  wipe <device> --level reset|factory|destroy [--commit] [--root-kind <k>]
                               鍵を破棄して消す。段階は Windows の三段に対応
   provision <device> --base <url> --key <file> [--commit]
                      [--esp <name>] [--recovery <name>] [--rootfs <name>]
-                     [--key-out <file>] [--print-key]
+                     [--key-out <file>] [--print-key] [--root-kind <k>]
                               切る→ESPと回復領域を埋める→台ごとの鍵で
                               暗号化して root を書く、を一周
 
 引数を間違えた時に消えては困るので、--commit が無ければ書き込みはしない。"
     );
     std::process::exit(2)
+}
+
+/// root に何を載せるかを読む。
+///
+/// 回復環境は常に Linux だが、導入する先は FreeBSD や NetBSD でありうるので、
+/// 実行時に指定する。既定は Linux。
+fn root_kind(args: &[String]) -> Result<RootKind> {
+    let v = args
+        .iter()
+        .position(|a| a == "--root-kind")
+        .and_then(|i| args.get(i + 1))
+        .map(String::as_str)
+        .unwrap_or("linux-luks");
+    Ok(match v {
+        "linux-luks" => RootKind::LinuxLuks,
+        "freebsd-zfs" => RootKind::FreeBsdZfs,
+        "freebsd-ufs" => RootKind::FreeBsdUfs,
+        "netbsd-cgd" => RootKind::NetBsdCgd,
+        "netbsd-ffs" => RootKind::NetBsdFfs,
+        "openbsd-data" => RootKind::OpenBsdData,
+        other => bail!(
+            "--root-kind が分からない: {other}\n\
+             linux-luks / freebsd-zfs / freebsd-ufs / netbsd-cgd / netbsd-ffs / openbsd-data"
+        ),
+    })
 }
 
 fn find(name: &str) -> Result<block::Disk> {
@@ -71,7 +96,7 @@ fn main() -> Result<()> {
             let name = args.get(1).unwrap_or_else(|| usage());
             let d = find(name)?;
             println!("{}\n", d.describe());
-            let layout = Layout::plan(d.size_bytes, d.logical_sector_size)?;
+            let layout = Layout::plan(d.size_bytes, d.logical_sector_size, root_kind(&args)?)?;
             print!("{}", layout.describe());
             println!("何も書いていない。書くなら partition ... --commit");
         }
@@ -80,7 +105,7 @@ fn main() -> Result<()> {
             let name = args.get(1).unwrap_or_else(|| usage());
             let commit = args.iter().any(|a| a == "--commit");
             let d = find(name)?;
-            let layout = Layout::plan(d.size_bytes, d.logical_sector_size)?;
+            let layout = Layout::plan(d.size_bytes, d.logical_sector_size, root_kind(&args)?)?;
 
             println!("{}\n", d.describe());
             print!("{}", layout.describe());
@@ -164,6 +189,7 @@ fn main() -> Result<()> {
                 &d.path,
                 d.size_bytes,
                 d.logical_sector_size,
+                root_kind(&args)?,
                 level,
                 args.iter().any(|a| a == "--commit"),
             )?;
@@ -194,6 +220,7 @@ fn main() -> Result<()> {
                 disk: &d.path,
                 size_bytes: d.size_bytes,
                 sector_size: d.logical_sector_size,
+                root_kind: root_kind(&args)?,
                 bundle: provision::Bundle {
                     base: &base,
                     esp: esp.as_deref(),

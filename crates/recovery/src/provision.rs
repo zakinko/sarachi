@@ -16,7 +16,7 @@
 
 use crate::{crypt, fetch, wipe};
 use anyhow::{Context, Result, bail};
-use sarachi_disk::{Layout, Partition, Role, write_gpt};
+use sarachi_disk::{Layout, Partition, Role, RootKind, write_gpt};
 use sarachi_image::{Manifest, SignedManifest, VerifyingKey, verify_and_write};
 use std::fs::OpenOptions;
 use std::path::Path;
@@ -39,6 +39,8 @@ pub struct Plan<'a> {
     pub disk: &'a Path,
     pub size_bytes: u64,
     pub sector_size: u64,
+    /// root に何を載せるか。型 GUID と暗号層の両方がこれで決まる。
+    pub root_kind: RootKind,
     pub bundle: Bundle<'a>,
     /// 作った鍵の書き出し先。本番では TPM か control plane へ。
     pub key_out: &'a Path,
@@ -92,7 +94,7 @@ fn write_into(base: &str, piece: &Piece, dev: &Path) -> Result<u64> {
 }
 
 pub fn run(plan: &Plan, trusted: &VerifyingKey) -> Result<()> {
-    let layout = Layout::plan(plan.size_bytes, plan.sector_size)?;
+    let layout = Layout::plan(plan.size_bytes, plan.sector_size, plan.root_kind)?;
     print!("{}", layout.describe());
 
     // **ディスクに触る前に、確かめられることを全て確かめる。**
@@ -159,9 +161,14 @@ pub fn run(plan: &Plan, trusted: &VerifyingKey) -> Result<()> {
     let root_dev = wipe::part_path(plan.disk, root_part.index);
     settle(&root_dev)?;
 
-    println!("3. 台ごとの鍵で LUKS2 を作る（{}）", root_dev.display());
+    let cr = crypt::for_kind(plan.root_kind)?;
+    println!(
+        "3. 台ごとの鍵で {} を作る（{}）",
+        cr.name(),
+        root_dev.display()
+    );
     let key = crypt::generate_key()?;
-    crypt::format(&root_dev, &key)?;
+    cr.format(&root_dev, &key)?;
     std::fs::write(plan.key_out, &key)
         .with_context(|| format!("鍵を {} に書けない", plan.key_out.display()))?;
     println!(
@@ -176,13 +183,12 @@ pub fn run(plan: &Plan, trusted: &VerifyingKey) -> Result<()> {
     }
 
     println!("4. 開いて、検証しながら中へ書く");
-    crypt::open(&root_dev, &key, MAPPER_NAME)?;
-    let mapped = Path::new("/dev/mapper").join(MAPPER_NAME);
+    let mapped = cr.open(&root_dev, &key, MAPPER_NAME)?;
     let n = write_into(plan.bundle.base, rootfs, &mapped)?;
     println!("   {} MiB", n / 1024 / 1024);
 
     println!("5. 閉じる");
-    crypt::close(MAPPER_NAME)?;
+    cr.close(MAPPER_NAME)?;
 
     println!("\n導入が完了した。");
     println!("  root は台ごとに異なる鍵で暗号化されている。");

@@ -32,8 +32,49 @@ const TYPE_ESP: &str = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
 /// 本プロジェクト固有。既存のどの type GUID でもないものを振ることで、
 /// どの OS にも自動マウントされず、かつ我々の領域だと一目で分かるようにする。
 const TYPE_RECOVERY: &str = "5f9a1c7e-4b2d-4e8a-9c3f-1d6b8e0a7c24";
-/// Linux LUKS。中身は回復環境が台ごとに新しい鍵で作る。
-const TYPE_LUKS: &str = "ca7d7ccb-63ed-4c53-861c-1742536059cc";
+
+/// root に何が載るか。
+///
+/// **`cfg!(target_os)` では決められない。** 回復環境は常に Linux だが、
+/// 導入する先は FreeBSD や NetBSD でありうる。どの OS の像を書くかは
+/// 実行時に決まるので、型もそこで選ぶ。
+///
+/// 値は推測ではなく NetBSD src の `sys/sys/disklabel_gpt.h` から取った。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootKind {
+    /// Linux LUKS。
+    LinuxLuks,
+    /// FreeBSD / GhostBSD / DragonFly。geli は下に敷くだけで型は変えないので、
+    /// 上に載るファイルシステムの型を名乗る。
+    FreeBsdZfs,
+    FreeBsdUfs,
+    /// NetBSD の cgd。
+    NetBsdCgd,
+    NetBsdFfs,
+    /// OpenBSD は用途を分けた型を持たず、これ一つ。
+    OpenBsdData,
+}
+
+impl RootKind {
+    fn guid(self) -> &'static str {
+        match self {
+            RootKind::LinuxLuks => "ca7d7ccb-63ed-4c53-861c-1742536059cc",
+            RootKind::FreeBsdZfs => "516e7cba-6ecf-11d6-8ff8-00022d09712b",
+            RootKind::FreeBsdUfs => "516e7cb6-6ecf-11d6-8ff8-00022d09712b",
+            RootKind::NetBsdCgd => "2db519ec-b10f-11dc-b99b-0019d1879648",
+            RootKind::NetBsdFfs => "49f48d5a-b10e-11dc-b99b-0019d1879648",
+            RootKind::OpenBsdData => "824cc7a0-36a8-11e3-890a-952519ad3f61",
+        }
+    }
+
+    /// 暗号層を下に敷くことを前提にした型か。
+    ///
+    /// FreeBSD の geli と OpenBSD の softraid は型を変えないので、
+    /// 型だけからは暗号化されているか分からない。分かるのは Linux と NetBSD。
+    pub fn names_encryption(self) -> bool {
+        matches!(self, RootKind::LinuxLuks | RootKind::NetBsdCgd)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -46,11 +87,11 @@ pub enum Role {
 }
 
 impl Role {
-    fn type_guid(self) -> Uuid {
+    fn type_guid(self, root: RootKind) -> Uuid {
         let s = match self {
             Role::Esp => TYPE_ESP,
             Role::Recovery => TYPE_RECOVERY,
-            Role::Root => TYPE_LUKS,
+            Role::Root => root.guid(),
         };
         Uuid::parse_str(s).expect("組み込みの type GUID が壊れている")
     }
@@ -87,6 +128,8 @@ impl Partition {
 pub struct Layout {
     pub sector_size: u64,
     pub total_sectors: u64,
+    /// root に何を載せるつもりか。型 GUID がこれで決まる。
+    pub root_kind: RootKind,
     /// ディスク自体の GUID。これも毎回新規に振る。
     pub disk_guid: Uuid,
     pub partitions: Vec<Partition>,
@@ -94,7 +137,7 @@ pub struct Layout {
 
 impl Layout {
     /// 与えられたディスクに対する配置を決める。ディスクには一切書き込まない。
-    pub fn plan(total_bytes: u64, sector_size: u64) -> Result<Self> {
+    pub fn plan(total_bytes: u64, sector_size: u64, root_kind: RootKind) -> Result<Self> {
         if !sector_size.is_power_of_two() || !(512..=4096).contains(&sector_size) {
             bail!("扱えないセクタ長: {sector_size}");
         }
@@ -145,7 +188,7 @@ impl Layout {
             partitions.push(Partition {
                 index: index as u32 + 1,
                 role,
-                type_guid: role.type_guid(),
+                type_guid: role.type_guid(root_kind),
                 unique_guid: Uuid::new_v4(),
                 label: role.label().to_string(),
                 first_lba: cursor,
@@ -157,6 +200,7 @@ impl Layout {
         Ok(Layout {
             sector_size,
             total_sectors,
+            root_kind,
             disk_guid: Uuid::new_v4(),
             partitions,
         })
@@ -169,11 +213,12 @@ impl Layout {
     /// 書き込む前に人間が読んで確認するための表。
     pub fn describe(&self) -> String {
         let mut out = format!(
-            "ディスク {} セクタ x {}B = {} GiB\ndisk GUID {}\n\n",
+            "ディスク {} セクタ x {}B = {} GiB\ndisk GUID {}\nroot は {:?}\n\n",
             self.total_sectors,
             self.sector_size,
             self.total_sectors * self.sector_size / 1024 / 1024 / 1024,
             self.disk_guid,
+            self.root_kind,
         );
         out.push_str("  # 役割      先頭LBA       終端LBA      サイズ  ラベル\n");
         for p in &self.partitions {
@@ -199,7 +244,7 @@ mod tests {
 
     #[test]
     fn 隙間なく末尾まで使い切る() {
-        let l = Layout::plan(64 * GIB, 512).unwrap();
+        let l = Layout::plan(64 * GIB, 512, RootKind::LinuxLuks).unwrap();
         assert_eq!(l.partitions.len(), 3);
         for w in l.partitions.windows(2) {
             assert_eq!(w[0].last_lba + 1, w[1].first_lba, "パーティション間に隙間");
@@ -211,7 +256,7 @@ mod tests {
     #[test]
     fn 全て1mib境界に揃う() {
         for sector_size in [512, 4096] {
-            let l = Layout::plan(64 * GIB, sector_size).unwrap();
+            let l = Layout::plan(64 * GIB, sector_size, RootKind::LinuxLuks).unwrap();
             let align = ALIGNMENT_BYTES / sector_size;
             for p in &l.partitions {
                 assert_eq!(p.first_lba % align, 0, "{:?} の先頭が非整列", p.role);
@@ -221,7 +266,7 @@ mod tests {
 
     #[test]
     fn 固定サイズが仕様どおり() {
-        let l = Layout::plan(64 * GIB, 512).unwrap();
+        let l = Layout::plan(64 * GIB, 512, RootKind::LinuxLuks).unwrap();
         let esp = l.get(Role::Esp).unwrap();
         let rec = l.get(Role::Recovery).unwrap();
         assert_eq!(esp.sectors() * 512, ESP_BYTES);
@@ -230,8 +275,8 @@ mod tests {
 
     #[test]
     fn rootがディスクに応じて伸びる() {
-        let small = Layout::plan(16 * GIB, 512).unwrap();
-        let large = Layout::plan(512 * GIB, 512).unwrap();
+        let small = Layout::plan(16 * GIB, 512, RootKind::LinuxLuks).unwrap();
+        let large = Layout::plan(512 * GIB, 512, RootKind::LinuxLuks).unwrap();
         assert!(
             large.get(Role::Root).unwrap().sectors() > small.get(Role::Root).unwrap().sectors(),
             "root が末尾まで伸びていない"
@@ -239,15 +284,64 @@ mod tests {
     }
 
     #[test]
+    fn rootの型guidが載せる物で変わる() {
+        // 値は NetBSD src の sys/sys/disklabel_gpt.h から取った物。
+        // 書き間違えると、その OS が自分の領域だと認識しない。
+        for (kind, want) in [
+            (RootKind::LinuxLuks, "ca7d7ccb-63ed-4c53-861c-1742536059cc"),
+            (RootKind::FreeBsdZfs, "516e7cba-6ecf-11d6-8ff8-00022d09712b"),
+            (RootKind::FreeBsdUfs, "516e7cb6-6ecf-11d6-8ff8-00022d09712b"),
+            (RootKind::NetBsdCgd, "2db519ec-b10f-11dc-b99b-0019d1879648"),
+            (RootKind::NetBsdFfs, "49f48d5a-b10e-11dc-b99b-0019d1879648"),
+            (
+                RootKind::OpenBsdData,
+                "824cc7a0-36a8-11e3-890a-952519ad3f61",
+            ),
+        ] {
+            let l = Layout::plan(64 * GIB, 512, kind).unwrap();
+            assert_eq!(
+                l.get(Role::Root).unwrap().type_guid.to_string(),
+                want,
+                "{kind:?} の型 GUID"
+            );
+        }
+    }
+
+    #[test]
+    fn espと回復領域は載せる物で変わらない() {
+        // 起動物の置き場は全 OS で同じ形にする。分岐するのは root だけ。
+        let a = Layout::plan(64 * GIB, 512, RootKind::LinuxLuks).unwrap();
+        let b = Layout::plan(64 * GIB, 512, RootKind::NetBsdCgd).unwrap();
+        assert_eq!(
+            a.get(Role::Esp).unwrap().type_guid,
+            b.get(Role::Esp).unwrap().type_guid
+        );
+        assert_eq!(
+            a.get(Role::Recovery).unwrap().type_guid,
+            b.get(Role::Recovery).unwrap().type_guid
+        );
+    }
+
+    #[test]
+    fn 型から暗号化が分かるのはluksとcgdだけ() {
+        // geli と softraid は下に敷くだけで型を変えないので、型を見ても
+        // 暗号化されているかは分からない。消す前の判断に型を使えない。
+        assert!(RootKind::LinuxLuks.names_encryption());
+        assert!(RootKind::NetBsdCgd.names_encryption());
+        assert!(!RootKind::FreeBsdZfs.names_encryption());
+        assert!(!RootKind::OpenBsdData.names_encryption());
+    }
+
+    #[test]
     fn 小さすぎるディスクは断る() {
-        assert!(Layout::plan(4 * GIB, 512).is_err());
+        assert!(Layout::plan(4 * GIB, 512, RootKind::LinuxLuks).is_err());
     }
 
     #[test]
     fn guidは毎回異なる() {
         // dd による複製で同一性が衝突しないことの担保。
-        let a = Layout::plan(64 * GIB, 512).unwrap();
-        let b = Layout::plan(64 * GIB, 512).unwrap();
+        let a = Layout::plan(64 * GIB, 512, RootKind::LinuxLuks).unwrap();
+        let b = Layout::plan(64 * GIB, 512, RootKind::LinuxLuks).unwrap();
         assert_ne!(a.disk_guid, b.disk_guid);
         for (pa, pb) in a.partitions.iter().zip(&b.partitions) {
             assert_ne!(

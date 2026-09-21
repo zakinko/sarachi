@@ -9,4 +9,4 @@ pub mod gpt;
 pub mod layout;
 
 pub use gpt::write_gpt;
-pub use layout::{Layout, Partition, Role};
+pub use layout::{Layout, Partition, Role, RootKind};
