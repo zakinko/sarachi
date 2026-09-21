@@ -57,13 +57,30 @@ echo "### rustc $VERSION には $LLVMPKG を使う"
 #   /usr/libexec/binutils234/elf/ld.bfd: cannot find -lzstd
 #
 # 動的 link だった間は libLLVM.so の側が抱えていたので表に出なかった。
-pkg install -y "$LLVMPKG" zstd libssh2
+# libssh2 はここに書かない。既に入っている（rust と git と curl の依存）。
+# 名前を挙げると pkg が upgrade を試み、古い ABI に依存する物を巻き添えで
+# 消す。実際にそうなった:
+#
+#   Installed packages to be REMOVED:
+#       curl: 8.10.0
+#       git: 2.49.0
+#       rust: 1.85.1        <- 種の rustc
+#
+# repo が移行中で、新しい libssh2 に合わせて建て直した rust がまだ無い。
+pkg install -y "$LLVMPKG" zstd
 
 # 入った物が在ることをここで確かめる。無いまま建て始めると、気づくのは
 # 20 分以上あとの link 段階になる。
 for lib in libzstd.a libzstd.so libssh2.so; do
 	[ -e "/usr/local/lib/$lib" ] || { echo "/usr/local/lib/$lib が無い" >&2; exit 1; }
 done
+# libssh2 は pkg-config 経由で使うので、その定義が在ることも見る。
+[ -e /usr/local/libdata/pkgconfig/libssh2.pc ] \
+	|| { echo "libssh2.pc が無い" >&2; exit 1; }
+# pkg install は依存の都合で既に入っている物を消すことがある。種を消された
+# まま 20 分建ててから気づくのは高いので、ここで見る。
+[ -x /usr/local/bin/rustc ] \
+	|| { echo "pkg install が種の rustc を消した" >&2; exit 1; }
 echo "  zstd: $(ls /usr/local/lib/libzstd.* | tr '\n' ' ')"
 if [ -n "$BOOTSTRAP_URL" ] && [ -z "$BOOTSTRAP_VER" ]; then
 	echo "置き場を渡すなら、種の版も要る" >&2
