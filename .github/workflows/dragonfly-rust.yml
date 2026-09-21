@@ -1,57 +1,78 @@
-# DragonFly の rust を自前で建てるための下調べ。
+# DragonFly 向けの rustc を建てて、次から取ってくるだけで済むようにする。
 #
-# Entra 認証に要る libhimmelblau は rustc 1.88 を要る。DPorts が配るのは
-# 1.85.1 で、2025-04-05 から動いていない。上流に新しいものも無い——DPorts の
-# Makefile.DragonFly が指している leaf.dragonflybsd.org の bootstrap は
-# 1.84.1 が最後で、2025-04 で止まっている。tier 3 なので rust 本家も binary を
-# 出さない。つまり誰かが建てるしかなく、それが我々になる。
+# なぜ自分で建てるのか。Entra 認証に要る libhimmelblau は rustc 1.88 を要るが、
+# DPorts が配るのは 1.85.1 で 2025-04-05 から動いていない。DPorts の
+# Makefile.DragonFly が bootstrap の取得元に指している leaf.dragonflybsd.org も
+# 1.84.1 が最後で、そこも同じ時期に止まっている。tier 3 なので rust 本家は
+# binary を出さない。新しいものは上流のどこにも無い。
 #
-# 1.88 で足りることは測ってある。1.87 では scraper 0.27.0 の let-chains が
-# 通らず、1.88 で libhimmelblau が建った。rustc は一つ前の版でしか建たない
-# 決まりなので、1.85.1 を種に 1.86 1.87 1.88 と三段積むことになる。
+# 1.88 で足りることは測った。1.87 では scraper 0.27.0 の let-chains が通らず、
+# 1.88 で libhimmelblau が建った。rustc は一つ前の版でしか建たないので、
+# 配布されている 1.85.1 を種に 1.86 1.87 1.88 と三段積む。一段ごとに一回
+# 起動する。version と bootstrap を入力で受けるのはそのため。
 #
-# その前にここで器を測る。rustc の build は disk を 20GB 以上要るが、
-# vmactions は memory しか指定させず disk は image 任せで、足りるかどうかが
-# 分からない。足りなければ CI ではなく実機に移すことになる。
-# 建てる workflow を書くのは、この答えが出てからにする。
-name: dragonfly-rust-probe
+# LLVM は package から入れる。同梱のものを建てると 4 core では二時間以上
+# かかり、job の上限六時間に rustc 本体と合わせて収まらない。base の cc が
+# gcc 8.3 (2019) なのも効く。DPorts は llvm19 と llvm20 の binary を配って
+# いるので、llvm-config をそちらへ向ける。
+#
+# 器は測ってある (2026-09-21)。/ に 134G、swap 16G、4 core、memory 6.4G。
+# disk は問題にならない。
+name: dragonfly-rust
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: '建てる rustc の版 (例 1.86.0)'
+        required: true
+      llvm:
+        description: '使う LLVM の package 名'
+        required: true
+        default: 'llvm20'
+      bootstrap_url:
+        description: >
+          種にする rustc/cargo の置き場。空なら pkg の rust (1.85.1) を使う。
+          二段目からは前の段の成果物を指す
+        required: false
+        default: ''
+      bootstrap_version:
+        description: '種の版。bootstrap_url を渡すときだけ要る (例 1.86.0)'
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  probe:
+  build:
     runs-on: ubuntu-latest
+    # 六時間の上限に当たって何も残らないより、手前で切って log を残したい
+    timeout-minutes: 345
     steps:
       - uses: actions/checkout@v4
-
-      - name: runner 側の空き
-        run: df -h / /mnt
 
       - uses: vmactions/dragonflybsd-vm@v1
         with:
           release: '6.4.2'
           usesh: true
-          # 種にする rust。ここで入るものが chain の出発点になる。
-          prepare: pkg install -y rust
+          # rust は種として要る。bootstrap_url を渡した場合は使わないが、
+          # 入れておいても害は無く、条件分岐を prepare に持ち込まずに済む
+          prepare: pkg install -y rust ${{ inputs.llvm }} cmake ninja git python3 curl pkgconf
           run: |
             set -e
-            echo "=== 種にする rust ==="
-            rustc --version
-            cargo --version
-            echo
-            echo "=== C の道具 ==="
-            cc --version | head -1
-            echo
-            echo "=== 資源 ==="
-            sysctl hw.ncpu hw.physmem hw.usermem
-            echo
-            echo "=== disk ==="
-            df -h
-            echo
-            echo "=== swap ==="
-            swapinfo -h || echo "swap 無し"
+            sh ci/dragonfly-rust-build.sh \
+              '${{ inputs.version }}' \
+              '${{ inputs.llvm }}' \
+              '${{ inputs.bootstrap_url }}' \
+              '${{ inputs.bootstrap_version }}'
+
+      - name: 成果物を持ち帰る
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-${{ inputs.version }}-x86_64-unknown-dragonfly
+          path: dist/*.tar.xz
+          if-no-files-found: error
+          # 次の段の種になるまで持てばよい
+          retention-days: 30
