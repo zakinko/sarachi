@@ -113,7 +113,9 @@ channel = "stable"
 # 配る物に debug 情報は要らない。build 時間と成果物の大きさの両方に効く。
 debug = false
 debug-assertions = false
-codegen-units = 1
+# codegen-units は既定のままにする。1 にすると出来る rustc は速くなるが
+# build 時間が大きく伸びる。ここで作るのは次の段の種なので、建つことと
+# 六時間に収まることを採る。
 
 [target.${TRIPLE}]
 llvm-config = "${LLVM_CONFIG}"
