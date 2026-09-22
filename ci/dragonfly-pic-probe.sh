@@ -27,6 +27,14 @@ cargo --version
 cc --version | head -1
 
 say "libssh2-sys を単独で建てる"
+#
+# 一度目の下調べは二つ足りていなかった。
+#
+#   cargo は build script の出力を成功時に表示しない（-vv が要る）
+#   lib を建てるだけでは、あの relocation error は表に出ない。PIE の実行体を
+#   link するときに出るものなので、bin を建てる必要がある
+#
+# 「再現しなかった」のではなく、再現する条件を作っていなかった。
 mkdir p; cd p
 cat > Cargo.toml <<'CONF'
 [package]
@@ -37,26 +45,41 @@ edition = "2021"
 [dependencies]
 libssh2-sys = "0.3.1"
 
+[[bin]]
+name = "picprobe"
+path = "src/main.rs"
+
 [workspace]
 CONF
-mkdir src; echo 'pub fn x() {}' > src/lib.rs
+mkdir src
+# 実際に使う。使わないと link から落とされて、確かめたい所を通らない。
+cat > src/main.rs <<'RS'
+fn main() {
+    unsafe {
+        libssh2_sys::libssh2_init(0);
+    }
+    println!("ok");
+}
+RS
 
-# cc-rs に叩いた command line を吐かせる。
 CC_ENABLE_DEBUG_OUTPUT=1
 export CC_ENABLE_DEBUG_OUTPUT
-if cargo build > "$W/build.log" 2>&1; then
-	echo "  [通った] cargo 単独では建つ"
+if cargo build -vv > "$W/build.log" 2>&1; then
+	echo "  [通った] cargo 単独では建つ（bin まで）"
+	BUILT=yes
 else
 	echo "  [駄目] cargo 単独でも落ちる"
+	BUILT=no
 fi
 
-say "cc-rs が叩いた command line（最初の一つ）"
-grep -m1 -A2 'running:' "$W/build.log" | head -5 | sed 's/^/  /' || echo "  出ていない"
+say "cc-rs が叩いた command line"
+grep -m2 -oE '"cc"[^\n]*' "$W/build.log" | cut -c1-400 | sed 's/^/  /' \
+	|| grep -m2 'running:' "$W/build.log" | cut -c1-400 | sed 's/^/  /' \
+	|| echo "  出ていない"
 
 say "-fPIC が渡っているか"
 if grep -q -- '-fPIC' "$W/build.log"; then
-	echo "  渡っている"
-	grep -o -- '-fPIC' "$W/build.log" | wc -l | awk '{print "    "$1" 回"}'
+	grep -o -- '-fPIC' "$W/build.log" | wc -l | awk '{print "  渡っている（"$1" 回）"}'
 else
 	echo "  **渡っていない**"
 fi
@@ -66,19 +89,21 @@ O=$(find "$W" -name 'agent.o' 2>/dev/null | head -1)
 if [ -n "$O" ]; then
 	echo "  $O"
 	if command -v readelf > /dev/null 2>&1; then
-		readelf -r "$O" 2>/dev/null | awk '{print $3}' | grep -c 'R_X86_64_32$' \
+		readelf -r "$O" 2>/dev/null | awk '$3 ~ /R_X86_64_32$/' | wc -l \
 			| awk '{print "    R_X86_64_32 (PIC でない): "$1" 件"}'
-		readelf -r "$O" 2>/dev/null | awk '{print $3}' | grep -c 'GOTPCREL\|R_X86_64_PC32' \
+		readelf -r "$O" 2>/dev/null | awk '$3 ~ /GOTPCREL|R_X86_64_PC32/' | wc -l \
 			| awk '{print "    PIC 向け: "$1" 件"}'
 	else
 		echo "    readelf が無い"
 	fi
 else
-	echo "  agent.o が無い（C を建てていない）"
+	echo "  agent.o が無い。C を建てていない——どこから libssh2 を得たかを見る"
+	grep -iE 'pkg-config|pkgconfig|rustc-link-lib|rustc-link-search' "$W/build.log" \
+		| head -5 | sed 's/^/    /'
 fi
 
 say "落ちた場合の理由"
-grep -E 'error|relocation|recompile' "$W/build.log" | head -8 | sed 's/^/  /' || true
+grep -E 'relocation|recompile|error\[|error:' "$W/build.log" | head -8 | sed 's/^/  /' || true
 
 say "片付け"
 cd "$HOME"; rm -rf "$W"
