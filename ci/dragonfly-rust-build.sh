@@ -333,26 +333,41 @@ export CFLAGS CXXFLAGS
 LD_LIBRARY_PATH=$BOOT/lib:/usr/lib/gcc80
 export LD_LIBRARY_PATH
 if [ -n "${SARACHI_PIC_PROBE:-}" ]; then
-	# 落ちても log を持ち帰る。捕まえたいのはそこ。
+	# rustc 本体は建てない。落ちたのは stage1-tools の cargo なので、種の
+	# rustc で cargo だけ建てれば同じ経路を通る。全部建てると 45 分かかる。
+	#
+	# **必ず exit 0 で終わること。** run が失敗すると vmactions は作業結果を
+	# 持ち帰らない。一度それで 45 分走らせて手ぶらになった。
 	set +e
-	python3 x.py dist rustc rust-std cargo -v > "$WRK/x.log" 2>&1
+	python3 x.py build --stage 0 cargo -v > "$WRK/x.log" 2>&1
 	RC=$?
 	set -e
+	echo "  x.py の終了状態: $RC"
+
 	mkdir -p "$ROOT_DIR/probe-out"
-	echo "### agent.c の command line" | tee "$ROOT_DIR/probe-out/pic.txt"
-	grep -aoE 'running:[^\n]*agent\.c' "$WRK/x.log" | head -2 \
-		| tee -a "$ROOT_DIR/probe-out/pic.txt" | cut -c1-200
-	echo "### -fPIC が在るか" | tee -a "$ROOT_DIR/probe-out/pic.txt"
-	if grep -aoE 'running:[^\n]*agent\.c' "$WRK/x.log" | head -1 | grep -q -- '-fPIC'; then
-		echo "  在る" | tee -a "$ROOT_DIR/probe-out/pic.txt"
-	else
-		echo "  **無い**" | tee -a "$ROOT_DIR/probe-out/pic.txt"
-	fi
-	grep -a -B3 -A3 'can not be used when making a PIE' "$WRK/x.log" | head -12 \
-		>> "$ROOT_DIR/probe-out/pic.txt" 2>/dev/null || true
+	# log は丸ごと持ち帰る。部分的に grep して当たらなければ何も見えない、
+	# という形で既に二度外している。
+	tail -c 2000000 "$WRK/x.log" > "$ROOT_DIR/probe-out/x.log"
+	wc -l < "$ROOT_DIR/probe-out/x.log" | awk '{print "  log "$1" 行を持ち帰る"}'
+
+	# cc の呼ばれ方と、bootstrap が立てた環境を残す。ここが本題。
+	{
+		echo "=== agent.c の command line ==="
+		grep -a 'agent\.c' "$WRK/x.log" | head -3
+		echo
+		echo "=== libssh2-sys の build script が見た環境 ==="
+		grep -a -E 'CC_x86_64|CFLAGS_x86_64|CRATE_CC_NO_DEFAULTS' "$WRK/x.log" | head -10
+		echo
+		echo "=== PIE の文句 ==="
+		grep -a -m3 -B2 -A2 'can not be used when making a PIE' "$WRK/x.log"
+	} > "$ROOT_DIR/probe-out/pic.txt" 2>&1
+	sed 's/^/  /' "$ROOT_DIR/probe-out/pic.txt" | cut -c1-200 | head -20
+
 	F=$(find "$WRK" -name '*agent*.o' 2>/dev/null | head -1)
-	[ -n "$F" ] && cp "$F" "$ROOT_DIR/probe-out/agent.o"
-	exit $RC
+	[ -n "$F" ] && cp "$F" "$ROOT_DIR/probe-out/agent.o" && echo "  agent.o も持ち帰る"
+
+	# 下調べは「測れたか」で判定する。建ったかどうかではない。
+	exit 0
 fi
 
 python3 x.py dist rustc rust-std cargo
