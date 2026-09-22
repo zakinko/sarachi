@@ -347,8 +347,11 @@ if [ -n "${SARACHI_PIC_PROBE:-}" ]; then
 	mkdir -p "$ROOT_DIR/probe-out"
 	# log は丸ごと持ち帰る。部分的に grep して当たらなければ何も見えない、
 	# という形で既に二度外している。
-	tail -c 2000000 "$WRK/x.log" > "$ROOT_DIR/probe-out/x.log"
-	wc -l < "$ROOT_DIR/probe-out/x.log" | awk '{print "  log "$1" 行を持ち帰る"}'
+	# 末尾だけ切ると、C を建てた所が落ちる。実際それで一度外した。
+	# 要る所だけ抜いて持ち帰る。
+	grep -a 'libssh2' "$WRK/x.log" > "$ROOT_DIR/probe-out/libssh2.log" || true
+	wc -l < "$ROOT_DIR/probe-out/libssh2.log" \
+		| awk '{print "  libssh2 に触れる行 "$1" 件"}'
 
 	# cc の呼ばれ方と、bootstrap が立てた環境を残す。ここが本題。
 	{
@@ -363,8 +366,12 @@ if [ -n "${SARACHI_PIC_PROBE:-}" ]; then
 	} > "$ROOT_DIR/probe-out/pic.txt" 2>&1
 	sed 's/^/  /' "$ROOT_DIR/probe-out/pic.txt" | cut -c1-200 | head -20
 
-	F=$(find "$WRK" -name '*agent*.o' 2>/dev/null | head -1)
-	[ -n "$F" ] && cp "$F" "$ROOT_DIR/probe-out/agent.o" && echo "  agent.o も持ち帰る"
+	# 問題の rlib そのものを持ち帰る。loose な .o を拾うと、別の build
+	# ディレクトリの綺麗な方を掴む。実際それで「再現しない」と読み違えた。
+	for R in $(find "$WRK" -name 'liblibssh2_sys-*.rlib' 2>/dev/null); do
+		cp "$R" "$ROOT_DIR/probe-out/$(basename "$R")"
+		echo "  $(basename "$R") を持ち帰る（$(wc -c < "$R") bytes）"
+	done
 
 	# 下調べは「測れたか」で判定する。建ったかどうかではない。
 	exit 0
