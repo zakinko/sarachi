@@ -12,6 +12,10 @@ jobs:
     permissions:
       contents: read
       actions: read
+    env:
+      # bootstrap は dragonfly 向けに足す cflags が無いので、値は空になる。
+      SARACHI_SET_CFLAGS: '1'
+      SARACHI_EMPTY_OK: ''
     steps:
       - uses: actions/checkout@v4
       - uses: vmactions/dragonflybsd-vm@v1
@@ -21,6 +25,7 @@ jobs:
           # 建てた 1.88 ではなく pkg の rust を使う。落ちたときの報告先が
           # 我々の作った物だと、話がややこしくなる。
           prepare: pkg install -y rust binutils
+          envs: 'SARACHI_SET_CFLAGS SARACHI_EMPTY_OK'
           run: sh ci/dragonfly-pic-probe.sh
 
       - name: log を持ち帰る

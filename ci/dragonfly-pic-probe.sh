@@ -82,6 +82,18 @@ else
 fi
 grep -A1 '^name = "cc"' Cargo.lock | sed 's/^/    /'
 
+# bootstrap が立てるのと同じ環境変数を再現する。
+#
+# rust の bootstrap は CFLAGS_<triple を下線にした物> を立てる
+# （src/bootstrap/src/core/builder/cargo.rs）。dragonfly 向けに足す物は
+# 空なので、値は空文字列になる。**環境変数が「立っている」ことそのものが
+# cc-rs の既定を変えるのではないか**を見る。
+if [ -n "${SARACHI_SET_CFLAGS:-}" ]; then
+	CFLAGS_x86_64_unknown_dragonfly="$SARACHI_EMPTY_OK"
+	export CFLAGS_x86_64_unknown_dragonfly
+	echo "  CFLAGS_x86_64_unknown_dragonfly を立てた（値: '${SARACHI_EMPTY_OK}'）"
+fi
+
 if cargo build -vv > "$W/build.log" 2>&1; then
 	echo "  [通った] cargo 単独では建つ（bin まで）"
 	BUILT=yes
