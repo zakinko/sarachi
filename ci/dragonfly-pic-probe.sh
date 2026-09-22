@@ -65,6 +65,23 @@ RS
 
 CC_ENABLE_DEBUG_OUTPUT=1
 export CC_ENABLE_DEBUG_OUTPUT
+
+# rust の build が使っているのと同じ cc に固定する。
+#
+# 前の回は単独で建てて「正常」と出たが、使われていたのは cc 1.4.7 だった。
+# rust 1.86 が cargo を建てるのに使うのは 1.1.22 で、object の名前の付け方
+# からして別物（1.1.22 は agent.o、1.4.7 は <hash>-agent.o）。版を揃えない
+# 比較には意味が無い。
+CCVER=${SARACHI_CC_VER:-1.1.22}
+cargo generate-lockfile > /dev/null 2>&1 || true
+if cargo update -p cc --precise "$CCVER" > "$W/pin.log" 2>&1; then
+	echo "  cc を $CCVER に固定した"
+else
+	echo "  cc を固定できなかった:"
+	tail -3 "$W/pin.log" | sed 's/^/    /'
+fi
+grep -A1 '^name = "cc"' Cargo.lock | sed 's/^/    /'
+
 if cargo build -vv > "$W/build.log" 2>&1; then
 	echo "  [通った] cargo 単独では建つ（bin まで）"
 	BUILT=yes
