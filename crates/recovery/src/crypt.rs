@@ -806,15 +806,61 @@ mod tests {
         };
         let dev = Path::new(&dev);
 
+        // cgd だけ形が違う。ディスク上に鍵材料が無いので、ここで消せない。
+        // 消えたことではなく、**消せないと正しく言うこと**を見る。
+        if cfg!(target_os = "netbsd") {
+            let keyfile = std::env::temp_dir().join("sarachi-cgd-key");
+            let key = generate_key().expect("鍵");
+            std::fs::write(&keyfile, &key).expect("鍵を置けない");
+            let params = std::env::temp_dir().join("sarachi-cgd-params");
+            let cr = Cgd::new(format!("/bin/cat {}", keyfile.display()), params.clone());
+
+            cr.format(dev, &key).expect("params を置けない");
+            assert!(cr.is_container(dev), "params が在るのに容器と見えない");
+
+            let mapped = cr.open(dev, &key, "cgd0").expect("開けない");
+            println!("開いた: {}", mapped.display());
+            {
+                let mut f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&mapped)
+                    .expect("開いた先に書けない");
+                f.write_all(&[0xa5u8; 4096]).expect("書き込み");
+                f.sync_all().expect("sync");
+            }
+            cr.close(&mapped).expect("閉じられない");
+
+            // ここが本番。黙って成功を返すと「消したつもりで消えていない」
+            // になる。
+            let e = match cr.erase(dev) {
+                Ok(()) => panic!("cgd で消せてしまった。壊す物が無いはずなのに"),
+                Err(e) => e.to_string(),
+            };
+            println!("期待どおり消せない: {e}");
+            assert!(e.contains("control plane"), "断り方: {e}");
+
+            let _ = std::fs::remove_file(&keyfile);
+            let _ = std::fs::remove_file(&params);
+            return;
+        }
+
         let kind = if cfg!(target_os = "freebsd") {
             RootKind::FreeBsdUfs
+        } else if cfg!(target_os = "openbsd") {
+            RootKind::OpenBsdData
         } else if cfg!(target_os = "linux") {
             RootKind::LinuxLuks
+        } else if cfg!(target_os = "dragonfly") {
+            RootKind::DragonFlyLuks
         } else {
             panic!("この OS の暗号層はまだ実装していない");
         };
         let cr = for_kind(kind, &Setup::default()).expect("暗号層が要る");
         println!("{} を {} で試す", dev.display(), cr.name());
+        assert!(
+            cr.has_on_disk_key(),
+            "ここへ来るのは鍵をディスクに持つ物だけ"
+        );
 
         let key = generate_key().expect("鍵");
         cr.format(dev, &key).expect("容器を作れない");
@@ -833,6 +879,7 @@ mod tests {
         cr.close(&mapped).expect("閉じられない");
 
         cr.erase(dev).expect("crypto-erase できない");
+        assert!(!cr.is_container(dev), "消したのにまだ容器と見える");
 
         // ここが本番。同じ鍵を持っていても開いてはいけない。
         match cr.open(dev, &key, "sarachi-test") {

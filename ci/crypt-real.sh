@@ -23,6 +23,40 @@ Linux)
 	DEV=$(losetup --find --show "$W/disk.img")
 	cleanup() { losetup -d "$DEV" 2>/dev/null || true; }
 	;;
+DragonFly)
+	# DragonFly は geli ではなく LUKS。base に cryptsetup と dmsetup が在り、
+	# dm_target_crypt が読み込める（実機で確かめた）。dm は自動では上がって
+	# いないので明示する。
+	kldload dm 2>/dev/null || true
+	kldload dm_target_crypt 2>/dev/null || true
+	vnconfig vnd0 "$W/disk.img"
+	DEV=/dev/vnd0
+	cleanup() { vnconfig -u vnd0 2>/dev/null || true; }
+	;;
+NetBSD)
+	vnconfig vnd0 "$W/disk.img"
+	DEV=/dev/vnd0d
+	cleanup() {
+		cgdconfig -u cgd0 2>/dev/null || true
+		vnconfig -u vnd0 2>/dev/null || true
+	}
+	;;
+OpenBSD)
+	vnconfig vnd0 "$W/disk.img"
+	# softraid に渡す区画は型が RAID でなければならない。4.2BSD のままだと
+	# bioctl が invalid metadata format で断る。素の vnd には c しか無いので、
+	# a を作って型を付ける。
+	disklabel vnd0 > "$W/label" 2>/dev/null || true
+	TOTAL=$(awk '$1 == "c:" { print $2 }' "$W/label")
+	[ -n "$TOTAL" ] || TOTAL=131072
+	awk -v sz="$((TOTAL - 128))" '
+		/^  c:/ { print "  a: " sz " 128 RAID" }
+		{ print }
+	' "$W/label" > "$W/label.raid"
+	disklabel -R vnd0 "$W/label.raid"
+	DEV=/dev/vnd0a
+	cleanup() { vnconfig -u vnd0 2>/dev/null || true; }
+	;;
 *)
 	echo "### $(uname) の暗号層はまだ実装していない。何もしない"
 	exit 0
