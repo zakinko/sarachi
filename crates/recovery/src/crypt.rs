@@ -107,9 +107,7 @@ pub fn for_kind(kind: RootKind, cx: &Setup) -> Result<Box<dyn Crypt>> {
             }
             Ok(Box::new(Cgd::new(cmd, cx.params.to_path_buf())))
         }
-        RootKind::OpenBsdData => {
-            bail!("softraid crypto はまだ実装していない（OpenBSD）。実機で確かめるまで入れない")
-        }
+        RootKind::OpenBsdData => Ok(Box::new(Softraid)),
     }
 }
 
@@ -154,6 +152,38 @@ fn run(exe: &str, what: &str, args: &[&str], stdin: Option<&[u8]>) -> Result<()>
         );
     }
     Ok(())
+}
+
+/// 走らせて、標準出力と標準エラーをまとめて返す。
+///
+/// `bioctl` は作った volume の名前を「attached as sd1」と人向けに書いて
+/// よこすだけなので、拾うには出力が要る。
+fn run_capture(exe: &str, what: &str, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut c = Command::new(exe);
+    c.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if stdin.is_some() {
+        c.stdin(Stdio::piped());
+    }
+    let mut child = c
+        .spawn()
+        .with_context(|| format!("{exe} を起動できない（{what}）"))?;
+    if let (Some(data), Some(mut s)) = (stdin, child.stdin.take()) {
+        s.write_all(data)?;
+        drop(s);
+    }
+    let out = child.wait_with_output()?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    if !out.status.success() {
+        bail!("{what} に失敗（{}）\n  {}", out.status, text.trim());
+    }
+    Ok(text)
 }
 
 /// 候補のうち最初に在るものを返す。無ければ名前だけ返して PATH に任せる。
@@ -470,6 +500,153 @@ impl Crypt for Cgd {
     }
 }
 
+// ---------------------------------------------------------------- softraid
+
+/// softraid の metadata の位置。`sys/dev/softraidvar.h` から取った。
+///
+/// ```text
+/// SR_META_OFFSET       16   chunk の頭 8192 バイトを空ける
+/// SR_META_SIZE         64
+/// SR_BOOT_LOADER_SIZE 320
+/// SR_BOOT_BLOCKS_SIZE 128
+/// SR_DATA_OFFSET      = 16 + (64 + 320 + 128) = 528
+/// ```
+///
+/// 鍵（masked key）はこの中にある。ここを潰すのが crypto-erase。
+const SR_META_OFFSET_SECTORS: u64 = 16;
+const SR_DATA_OFFSET_SECTORS: u64 = 528;
+const SR_SECTOR: u64 = 512;
+/// `SR_MAGIC`。little-endian で並べると "marcCRAM"。
+const SR_MAGIC: u64 = 0x4d41_5243_6372_616d;
+
+/// OpenBSD の softraid crypto。
+///
+/// LUKS や geli と同じく、**暗号化されたディスクの中に鍵材料を持つ**
+/// （cgd はここが違う）。だから消去はここで完結する。
+///
+/// 実機で確かめた（2026-09-22）。渡す区画は型が RAID でなければならず、
+/// 4.2BSD のままだと `bioctl` が `invalid metadata format` で断る。
+/// パスフレーズは `-s` で標準入力から渡せるので、**手元にファイルとして
+/// 置かずに済む**。
+pub struct Softraid;
+
+impl Softraid {
+    fn exe() -> &'static str {
+        first_existing(&["/sbin/bioctl", "/usr/sbin/bioctl"], "bioctl")
+    }
+
+    /// 鍵をパスフレーズの形にする。
+    ///
+    /// `bioctl` は行として読むので、生のバイトは渡せない（改行や NUL が
+    /// 混じる）。16 進にして一行にする。元の鍵の情報量はそのまま。
+    fn passphrase(key: &[u8]) -> Vec<u8> {
+        let mut v: Vec<u8> = key
+            .iter()
+            .flat_map(|b| format!("{b:02x}").into_bytes())
+            .collect();
+        v.push(b'\n');
+        v
+    }
+
+    /// 「attached as sd1」から sd1 を拾う。
+    fn attached_name(out: &str) -> Option<String> {
+        let i = out.find("attached as ")? + "attached as ".len();
+        let rest = &out[i..];
+        let end = rest
+            .find(|c: char| !c.is_ascii_alphanumeric())
+            .unwrap_or(rest.len());
+        let n = &rest[..end];
+        if n.starts_with("sd") && n.len() > 2 {
+            Some(n.to_string())
+        } else {
+            None
+        }
+    }
+
+    /// 開いた先（/dev/sd1c）から volume の名前（sd1）へ戻す。
+    fn volume(mapped: &Path) -> String {
+        mapped
+            .file_name()
+            .map(|n| n.to_string_lossy().trim_end_matches('c').to_string())
+            .unwrap_or_default()
+    }
+
+    fn attach(&self, device: &Path, key: &[u8]) -> Result<String> {
+        let dev = device.to_string_lossy().to_string();
+        let out = run_capture(
+            Self::exe(),
+            "softraid の展開",
+            // -s は /dev/tty ではなく /dev/stdin から読む。確認も再入力も
+            // しないので、人が居なくても通る。
+            &["-s", "-c", "C", "-l", &dev, "softraid0"],
+            Some(&Self::passphrase(key)),
+        )?;
+        Self::attached_name(&out)
+            .ok_or_else(|| anyhow::anyhow!("volume の名前を読み取れない:\n{out}"))
+    }
+}
+
+impl Crypt for Softraid {
+    fn name(&self) -> &'static str {
+        "softraid crypto"
+    }
+
+    /// 容器を作る。作ると同時に開くので、開けたことを確かめてから閉じる。
+    fn format(&self, device: &Path, key: &[u8]) -> Result<()> {
+        let name = self.attach(device, key)?;
+        run(Self::exe(), "softraid の閉鎖", &["-d", &name], None)
+    }
+
+    fn open(&self, device: &Path, key: &[u8], _name: &str) -> Result<PathBuf> {
+        // name は使わない。softraid は名前を選ばせず、空いている sdN を取る。
+        let v = self.attach(device, key)?;
+        Ok(PathBuf::from(format!("/dev/{v}c")))
+    }
+
+    fn close(&self, mapped: &Path) -> Result<()> {
+        let v = Self::volume(mapped);
+        run(Self::exe(), "softraid の閉鎖", &["-d", &v], None)
+    }
+
+    /// crypto-erase。metadata ごと潰す。
+    ///
+    /// `geli kill` や `luksErase` に当たる命令が `bioctl` に無いので、鍵の
+    /// 在処を直接消す。消すのは chunk の頭 528 sector で、そこに masked key が
+    /// 入っている。上書きが flash で完全でない点は LUKS の keyslot 消去と
+    /// 同じ性質で、全面上書きよりは遥かに筋がよい。
+    fn erase(&self, device: &Path) -> Result<()> {
+        use std::io::Write;
+        let n = (SR_DATA_OFFSET_SECTORS * SR_SECTOR) as usize;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(device)
+            .with_context(|| format!("{} を開けない", device.display()))?;
+        f.write_all(&vec![0u8; n])
+            .with_context(|| format!("{} の metadata を潰せない", device.display()))?;
+        f.sync_all()?;
+        Ok(())
+    }
+
+    /// chunk の頭に softraid の magic が在るか。
+    fn is_container(&self, device: &Path) -> bool {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut f = match std::fs::File::open(device) {
+            Ok(f) => f,
+            Err(_) => return false,
+        };
+        if f.seek(SeekFrom::Start(SR_META_OFFSET_SECTORS * SR_SECTOR))
+            .is_err()
+        {
+            return false;
+        }
+        let mut b = [0u8; 8];
+        if f.read_exact(&mut b).is_err() {
+            return false;
+        }
+        u64::from_le_bytes(b) == SR_MAGIC
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,19 +661,53 @@ mod tests {
     }
 
     #[test]
-    fn 実装していないosは断る() {
-        // 黙って別の手を使ってはいけない。消去は取り返しがつかないので、
-        // 確かめていない経路は通さない。
-        // 残るは OpenBSD の softraid crypto だけ。
-        let k = RootKind::OpenBsdData;
-        let e = match for_kind(k, &Setup::default()) {
-            Ok(_) => panic!("{k:?} は実装していないのに通った"),
-            Err(e) => e,
-        };
-        assert!(
-            e.to_string().contains("実装していない"),
-            "{k:?} の断り方: {e}"
+    fn 十二の標的すべてに暗号層がある() {
+        // 「実装していない OS は断る」試験だったものを置き換える。断る対象が
+        // 無くなった——四つとも実装できたので。黙って別の手を使わない、と
+        // いう元の狙いは、各実装が正しい物を返すことで見る。
+        for (k, want) in [
+            (RootKind::LinuxLuks, "LUKS2"),
+            (RootKind::DragonFlyLuks, "LUKS2"),
+            (RootKind::FreeBsdZfs, "geli (AES-XTS 256)"),
+            (RootKind::FreeBsdUfs, "geli (AES-XTS 256)"),
+            (RootKind::NetBsdCgd, "cgd (aes-xts 256)"),
+            (RootKind::NetBsdFfs, "cgd (aes-xts 256)"),
+            (RootKind::OpenBsdData, "softraid crypto"),
+        ] {
+            let c = match for_kind(k, &Setup::default()) {
+                Ok(c) => c,
+                Err(e) => panic!("{k:?} に暗号層が無い: {e}"),
+            };
+            assert_eq!(c.name(), want, "{k:?} に違う暗号層が当たっている");
+        }
+    }
+
+    #[test]
+    fn softraidはディスク上に鍵を持つ() {
+        // cgd と違い、消去はここで完結する。
+        let c = for_kind(RootKind::OpenBsdData, &Setup::default()).unwrap();
+        assert!(c.has_on_disk_key());
+    }
+
+    #[test]
+    fn softraidのパスフレーズは一行になる() {
+        // bioctl は行として読むので、生のバイトは渡せない。改行や NUL が
+        // 混じると、そこで切れた物が鍵として通ってしまう。16 進にすれば
+        // 元の情報量を保ったまま一行に収まる。
+        let p = Softraid::passphrase(&[0x00, 0x0a, 0xff, 0x41]);
+        assert_eq!(p, b"000aff41\n");
+        assert_eq!(p.iter().filter(|&&b| b == b'\n').count(), 1);
+        assert!(!p[..p.len() - 1].contains(&0), "NUL が混じっている");
+    }
+
+    #[test]
+    fn softraidは開いた先から名前を取れる() {
+        assert_eq!(
+            Softraid::attached_name("softraid0: CRYPTO volume attached as sd1\n"),
+            Some("sd1".to_string())
         );
+        assert_eq!(Softraid::attached_name("何も書いていない"), None);
+        assert_eq!(Softraid::volume(Path::new("/dev/sd1c")), "sd1");
     }
 
     #[test]
