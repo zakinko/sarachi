@@ -72,20 +72,33 @@ else
 	BUILT=no
 fi
 
-say "cc-rs が叩いた command line"
-grep -m2 -oE '"cc"[^\n]*' "$W/build.log" | cut -c1-400 | sed 's/^/  /' \
-	|| grep -m2 'running:' "$W/build.log" | cut -c1-400 | sed 's/^/  /' \
-	|| echo "  出ていない"
-
-say "-fPIC が渡っているか"
-if grep -q -- '-fPIC' "$W/build.log"; then
-	grep -o -- '-fPIC' "$W/build.log" | wc -l | awk '{print "  渡っている（"$1" 回）"}'
+say "libssh2-sys の OUT_DIR に何が在るか"
+OUT=$(find "$W" -type d -name 'libssh2-sys-*' 2>/dev/null | head -3)
+if [ -n "$OUT" ]; then
+	for d in $OUT; do
+		echo "  $d"
+		find "$d" -name '*.o' 2>/dev/null | head -5 | sed 's/^/    /'
+		find "$d" -name '*.a' 2>/dev/null | head -3 | sed 's/^/    /'
+		n=$(find "$d" -name '*.o' 2>/dev/null | wc -l)
+		echo "    object の数: $n"
+	done
 else
-	echo "  **渡っていない**"
+	echo "  libssh2-sys の build ディレクトリが無い"
+fi
+
+say "agent.c を建てた command line"
+grep -oE '"cc"[^\n]*agent\.c[^\n]*' "$W/build.log" | head -1 | cut -c1-500 | sed 's/^/  /' \
+	|| echo "  agent.c を建てた形跡が無い"
+
+say "その command line に -fPIC が在るか"
+if grep -oE '"cc"[^\n]*agent\.c[^\n]*' "$W/build.log" | head -1 | grep -q -- '-fPIC'; then
+	echo "  **在る**"
+else
+	echo "  無い（agent.c を建てていないだけかもしれない）"
 fi
 
 say "出来た object の relocation"
-O=$(find "$W" -name 'agent.o' 2>/dev/null | head -1)
+O=$(find "$W" -name '*agent*.o' 2>/dev/null | head -1)
 if [ -n "$O" ]; then
 	echo "  $O"
 	if command -v readelf > /dev/null 2>&1; then
@@ -93,13 +106,11 @@ if [ -n "$O" ]; then
 			| awk '{print "    R_X86_64_32 (PIC でない): "$1" 件"}'
 		readelf -r "$O" 2>/dev/null | awk '$3 ~ /GOTPCREL|R_X86_64_PC32/' | wc -l \
 			| awk '{print "    PIC 向け: "$1" 件"}'
-	else
-		echo "    readelf が無い"
 	fi
 else
-	echo "  agent.o が無い。C を建てていない——どこから libssh2 を得たかを見る"
-	grep -iE 'pkg-config|pkgconfig|rustc-link-lib|rustc-link-search' "$W/build.log" \
-		| head -5 | sed 's/^/    /'
+	echo "  無い。どこから libssh2 を得たかを見る"
+	grep -iE 'rustc-link-lib|rustc-link-search|pkg_config|LIBSSH2' "$W/build.log" \
+		| grep -i ssh | head -5 | sed 's/^/    /'
 fi
 
 say "落ちた場合の理由"
