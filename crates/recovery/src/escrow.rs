@@ -27,6 +27,7 @@
 //! `libhimmelblau` が使える以上、そこは他の Linux 用 MDM に無い筋になる。
 
 use anyhow::{Context, Result, bail};
+use std::io::Read;
 use std::path::PathBuf;
 
 pub trait Escrow {
@@ -39,6 +40,13 @@ pub trait Escrow {
     /// 無い台は、暗号化されているが誰も開けられない塊になる。消去の前に
     /// 救済が壊れる形で、しかも壊れたことは次に開こうとするまで分からない。
     fn store(&self, device_id: &str, key: &[u8]) -> Result<()>;
+
+    /// 預けた鍵を取り戻す。
+    ///
+    /// 起動のたびにここから取る台がある。**NetBSD がそれ。** cgd は keyslot を
+    /// 持たないので、鍵を手元に置くと消去がただのファイル削除になり、SD や
+    /// SSD で成立しなくなる。手元に置かずここから取れば、消す物が手元に無い。
+    fn fetch(&self, device_id: &str) -> Result<Vec<u8>>;
 }
 
 /// 預け先の選び方。
@@ -86,6 +94,11 @@ impl Escrow for FileEscrow {
         std::fs::write(&self.path, key)
             .with_context(|| format!("鍵を {} に書けない", self.path.display()))
     }
+
+    fn fetch(&self, _device_id: &str) -> Result<Vec<u8>> {
+        std::fs::read(&self.path)
+            .with_context(|| format!("鍵を {} から読めない", self.path.display()))
+    }
 }
 
 // ---------------------------------------------------------------- control plane
@@ -101,6 +114,21 @@ pub struct ControlPlaneEscrow {
 }
 
 impl ControlPlaneEscrow {
+    /// 平文で鍵をやりとりさせない。
+    ///
+    /// 呼ぶ側ではなくここで断るのは、設定を書き間違えたときに黙って鍵が網へ
+    /// 出るのが一番まずいため。預けるときも取るときも通る。
+    fn require_https(&self) -> Result<()> {
+        if !self.base.starts_with("https://") {
+            bail!(
+                "control plane は https でなければならない（{}）。\n\
+                 鍵をやりとりするので、平文で出すわけにいかない",
+                self.base
+            );
+        }
+        Ok(())
+    }
+
     /// 鍵は本文に入れる。URL に入れるとサーバの access log と、途中の
     /// proxy の log に残る。
     fn body(device_id: &str, key: &[u8]) -> String {
@@ -115,13 +143,7 @@ impl Escrow for ControlPlaneEscrow {
     }
 
     fn store(&self, device_id: &str, key: &[u8]) -> Result<()> {
-        if !self.base.starts_with("https://") {
-            bail!(
-                "control plane は https でなければならない（{}）。\n\
-                 鍵を本文に入れるので、平文で出すわけにいかない",
-                self.base
-            );
-        }
+        self.require_https()?;
         let url = format!("{}/v1/escrow", self.base.trim_end_matches('/'));
         let res = ureq::post(&url)
             .set("authorization", &format!("Bearer {}", self.token))
@@ -131,6 +153,23 @@ impl Escrow for ControlPlaneEscrow {
             Ok(_) => Ok(()),
             Err(e) => bail!("control plane に鍵を預けられない（{url}）: {e}"),
         }
+    }
+
+    fn fetch(&self, device_id: &str) -> Result<Vec<u8>> {
+        self.require_https()?;
+        let url = format!("{}/v1/key/{device_id}", self.base.trim_end_matches('/'));
+        let res = ureq::get(&url)
+            .set("authorization", &format!("Bearer {}", self.token))
+            .call()
+            .map_err(|e| anyhow::anyhow!("control plane から鍵を取れない（{url}）: {e}"))?;
+        let mut key = Vec::new();
+        res.into_reader()
+            .read_to_end(&mut key)
+            .context("鍵を読み切れない")?;
+        if key.is_empty() {
+            bail!("control plane が空の鍵を返した（{url}）");
+        }
+        Ok(key)
     }
 }
 
@@ -168,6 +207,29 @@ mod tests {
         let b = ControlPlaneEscrow::body("dev-1", &[0xde, 0xad, 0xbe, 0xef]);
         assert!(b.contains("\"key\":\"deadbeef\""), "{b}");
         assert!(b.contains("\"device_id\":\"dev-1\""), "{b}");
+    }
+
+    #[test]
+    fn ファイルから取り戻せる() {
+        let d = std::env::temp_dir().join(format!("sarachi-escrow-f-{}", std::process::id()));
+        let e = for_kind(Kind::File(d.clone())).unwrap();
+        e.store("dev-1", &[9, 8, 7]).unwrap();
+        assert_eq!(e.fetch("dev-1").unwrap(), vec![9, 8, 7]);
+        let _ = std::fs::remove_file(&d);
+    }
+
+    #[test]
+    fn 取り戻すときも平文のhttpは断る() {
+        let e = for_kind(Kind::ControlPlane {
+            base: "http://example.invalid".into(),
+            token: "t".into(),
+        })
+        .unwrap();
+        let err = match e.fetch("dev-1") {
+            Ok(_) => panic!("平文の http から取ってしまった"),
+            Err(e) => e.to_string(),
+        };
+        assert!(err.contains("https"), "断り方: {err}");
     }
 
     #[test]

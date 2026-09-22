@@ -29,6 +29,9 @@ fn usage() -> ! {
   install <device> --manifest <url> --image <url> --key <file> [--commit]
                               署名を検証しながら生のディスクへ書き戻す
                               --resume-from <n> で途中から
+  key-fetch --device-id <id> [--escrow-url <https://…> [--escrow-token <t>]]
+                              預けた鍵を stdout に出す。NetBSD の cgd を
+                              shell_cmd で開くときに呼ばれる
   wipe <device> --level reset|factory|destroy [--commit] [--root-kind <k>]
                               鍵を破棄して消す。段階は Windows の三段に対応
   provision <device> --base <url> --key <file> [--commit]
@@ -201,6 +204,41 @@ fn main() -> Result<()> {
             )?;
         }
 
+        // cgd の shell_cmd から呼ばれる口。鍵を stdout に出すだけ。
+        //
+        // NetBSD は cgd が keyslot を持たないので、鍵を手元に置くと消去が
+        // ただのファイル削除になり、SD や SSD で成立しない。起動のたびに
+        // ここから取れば、消す物が手元に無い。
+        "key-fetch" => {
+            let opt = |name: &str| -> Option<String> {
+                args.iter()
+                    .position(|a| a == name)
+                    .and_then(|i| args.get(i + 1))
+                    .cloned()
+            };
+            let device_id = match opt("--device-id") {
+                Some(d) => d,
+                None => {
+                    eprintln!("--device-id が要る");
+                    std::process::exit(2)
+                }
+            };
+            let kind = match opt("--escrow-url") {
+                Some(base) => escrow::Kind::ControlPlane {
+                    base,
+                    token: opt("--escrow-token").unwrap_or_default(),
+                },
+                None => escrow::Kind::File(std::path::PathBuf::from(
+                    opt("--key-out").unwrap_or_else(|| "/run/sarachi-root.key".into()),
+                )),
+            };
+            let key = escrow::for_kind(kind)?.fetch(&device_id)?;
+            // 生のまま出す。整形すると、受け取る側が何を期待するかに
+            // 引きずられる。加工が要るなら呼ぶ側でやる。
+            use std::io::Write;
+            std::io::stdout().write_all(&key)?;
+            std::io::stdout().flush()?;
+        }
         "provision" => {
             let dev = args.get(1).unwrap_or_else(|| usage());
             let opt = |name: &str| -> Option<String> {
