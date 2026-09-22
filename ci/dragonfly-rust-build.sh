@@ -97,7 +97,8 @@ if [ -n "$BOOTSTRAP_URL" ] && [ -d "$BOOTSTRAP_URL" ]; then
 fi
 
 TRIPLE=x86_64-unknown-dragonfly
-OUT=$(pwd)/dist
+ROOT_DIR=$(pwd)
+OUT=$ROOT_DIR/dist
 # / は 134G あるが、/build は build のために切られた別の partition なので
 # そちらを使う。45G あり、rustc には十分。
 WRK=/build/rust
@@ -311,8 +312,16 @@ export LIBRARY_PATH
 #
 # 代償として、出来た cargo は package の libssh2 を要る。rustc の方は
 # 自己完結のままなので、そちらは影響を受けない。
-LIBSSH2_SYS_USE_PKG_CONFIG=1
-export LIBSSH2_SYS_USE_PKG_CONFIG
+# SARACHI_PIC_PROBE を立てると、この逃げ道を使わずに C を建てる。落ちるのを
+# 承知で走らせ、cc がどう呼ばれたかを捕まえるため。普段は立てない。
+if [ -z "${SARACHI_PIC_PROBE:-}" ]; then
+	LIBSSH2_SYS_USE_PKG_CONFIG=1
+	export LIBSSH2_SYS_USE_PKG_CONFIG
+else
+	echo "### [下調べ] libssh2 の C を建てる。落ちるのを承知で cc の呼ばれ方を見る"
+	CC_ENABLE_DEBUG_OUTPUT=1
+	export CC_ENABLE_DEBUG_OUTPUT
+fi
 
 TU=$(echo "$TRIPLE" | tr - _)
 eval "CFLAGS_${TU}=-fPIC; export CFLAGS_${TU}"
@@ -323,6 +332,29 @@ CXXFLAGS="-fPIC"
 export CFLAGS CXXFLAGS
 LD_LIBRARY_PATH=$BOOT/lib:/usr/lib/gcc80
 export LD_LIBRARY_PATH
+if [ -n "${SARACHI_PIC_PROBE:-}" ]; then
+	# 落ちても log を持ち帰る。捕まえたいのはそこ。
+	set +e
+	python3 x.py dist rustc rust-std cargo -v > "$WRK/x.log" 2>&1
+	RC=$?
+	set -e
+	mkdir -p "$ROOT_DIR/probe-out"
+	echo "### agent.c の command line" | tee "$ROOT_DIR/probe-out/pic.txt"
+	grep -aoE 'running:[^\n]*agent\.c' "$WRK/x.log" | head -2 \
+		| tee -a "$ROOT_DIR/probe-out/pic.txt" | cut -c1-200
+	echo "### -fPIC が在るか" | tee -a "$ROOT_DIR/probe-out/pic.txt"
+	if grep -aoE 'running:[^\n]*agent\.c' "$WRK/x.log" | head -1 | grep -q -- '-fPIC'; then
+		echo "  在る" | tee -a "$ROOT_DIR/probe-out/pic.txt"
+	else
+		echo "  **無い**" | tee -a "$ROOT_DIR/probe-out/pic.txt"
+	fi
+	grep -a -B3 -A3 'can not be used when making a PIE' "$WRK/x.log" | head -12 \
+		>> "$ROOT_DIR/probe-out/pic.txt" 2>/dev/null || true
+	F=$(find "$WRK" -name '*agent*.o' 2>/dev/null | head -1)
+	[ -n "$F" ] && cp "$F" "$ROOT_DIR/probe-out/agent.o"
+	exit $RC
+fi
+
 python3 x.py dist rustc rust-std cargo
 
 say "成果物を集める"

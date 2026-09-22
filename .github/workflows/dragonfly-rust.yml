@@ -38,6 +38,12 @@ on:
           空なら pkg の rust (1.85.1) を使う
         required: false
         default: ''
+      pic_probe:
+        description: >
+          立てると libssh2 の C を建てて落ちるまで走らせ、cc がどう呼ばれたかを
+          持ち帰る。-fPIC が付かない件の調べ用。普段は空
+        required: false
+        default: ''
       bootstrap_version:
         description: '種の版。bootstrap_run_id を渡すときだけ要る (例 1.86.0)'
         required: false
@@ -93,6 +99,8 @@ jobs:
             if [ -n '${{ inputs.bootstrap_version }}' ]; then
               BOOTSRC=bootstrap
             fi
+            SARACHI_PIC_PROBE='${{ inputs.pic_probe }}'
+            export SARACHI_PIC_PROBE
             sh ci/dragonfly-rust-build.sh \
               '${{ inputs.version }}' \
               '${{ inputs.llvm }}' \
@@ -107,3 +115,11 @@ jobs:
           if-no-files-found: error
           # 次の段の種になるまで持てばよい
           retention-days: 30
+
+      - name: 下調べの結果を持ち帰る
+        if: always() && inputs.pic_probe != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-pic-probe
+          path: probe-out/
+          if-no-files-found: warn
