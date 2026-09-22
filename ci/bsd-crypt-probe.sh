@@ -1,68 +1,78 @@
 #!/bin/sh
-# cgd (NetBSD) と softraid crypto (OpenBSD) の性質を実機で確かめる。
+# cgd (NetBSD) と softraid crypto (OpenBSD) を実機で動かして性質を確かめる。
 #
-# どちらも実装の前に知りたいことがある。
+# 一度目の下調べで分かったこと。
+#   cgd      keygen shell_cmd "path"; は構文誤り。cmd は keygen の block の
+#            中に書く（man の PARAMETERS FILE: "cmd string — The command to
+#            execute. Only used for the shell_cmd key generation method."）
+#   softraid bioctl -s で /dev/stdin からパスフレーズを読める。-p passfile も
+#            ある。鍵を手元に置かずに済む道がある
 #
-# cgd は keyslot を持たない。鍵は params ファイルの側にあるので、素直に
-# storedkey を使うと消去が「普通のファイルを消す」ことになり、SD や SSD で
-# 成立しない。shell_cmd（コマンドの stdout から鍵を読む）が道になるはずだが、
-# 鍵をどう渡せばよいのかが man から読み取れない。
-#
-# softraid は鍵をファイルから渡せるのかを知りたい。パスフレーズを人が打つ
-# しか無いなら、無人で導入できない。
-#
-# 使い捨て。答えが出たら消す。
+# 一度目は終了状態の見方も誤っていた。cmd | sed && … と書いたので判定して
+# いたのは sed の終了状態で、構文誤りが出ているのに「通った」と表示していた。
+# ここでは pipeline を挟まず、log をファイルに落として $? を直に見る。
 set -e
 say() { echo; echo "### $*"; }
+W=$HOME/crypt-probe
+
+# 走らせて、通ったかを正しく判定する。pipeline を挟まない。
+run() {
+	_what=$1; shift
+	if "$@" > "$W/out" 2>&1; then
+		echo "  [通った] $_what"
+		sed 's/^/    /' "$W/out"
+		return 0
+	fi
+	echo "  [駄目]  $_what (exit $?)"
+	sed 's/^/    /' "$W/out"
+	return 1
+}
 
 case $(uname) in
-NetBSD) ;;
-OpenBSD) ;;
+NetBSD|OpenBSD) ;;
 *) echo "この OS は見ない"; exit 0 ;;
 esac
 
-W=$HOME/crypt-probe
 rm -rf "$W"; mkdir -p "$W"; cd "$W"
 dd if=/dev/zero of="$W/disk.img" bs=1m count=64 2>/dev/null
 
 if [ "$(uname)" = NetBSD ]; then
-	say "版と道具"
-	uname -r
-	ls -l /sbin/cgdconfig
-
-	say "cgdconfig の使い方"
-	cgdconfig 2>&1 | head -25 || true
-
-	say "storedkey の params を生成してみる"
-	cgdconfig -g -o "$W/p-stored" -V none aes-xts 256 < /dev/null 2>&1 | head -5 || true
-	if [ -f "$W/p-stored" ]; then
-		echo "  --- 生成された params ---"
-		sed 's/^/  /' "$W/p-stored"
-	else
-		echo "  生成できなかった"
-	fi
-
 	say "vnd を作る"
-	vnconfig vnd0 "$W/disk.img" 2>&1 | sed 's/^/  /' || true
-	ls -l /dev/vnd0d 2>/dev/null | sed 's/^/  /' || echo "  /dev/vnd0d が無い"
+	run "vnconfig" vnconfig vnd0 "$W/disk.img" || true
 
-	say "shell_cmd を試す（鍵は生の 32 byte）"
-	printf '#!/bin/sh\ndd if=/dev/zero bs=32 count=1 2>/dev/null\n' > "$W/keycmd"
-	chmod +x "$W/keycmd"
-	cat > "$W/p-shell" <<CONF
+	for form in raw base64; do
+		say "shell_cmd を試す（鍵は $form）"
+		if [ "$form" = raw ]; then
+			printf '#!/bin/sh\ndd if=/dev/urandom bs=32 count=1 2>/dev/null\n' > "$W/keycmd"
+		else
+			printf '#!/bin/sh\ndd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | tr -d "\\n"\n' > "$W/keycmd"
+		fi
+		chmod +x "$W/keycmd"
+		# 同じ鍵が二度出ないと開けないので、一度作って固定する。
+		"$W/keycmd" > "$W/thekey"
+		printf '#!/bin/sh\ncat %s/thekey\n' "$W" > "$W/keycmd"
+		chmod +x "$W/keycmd"
+
+		cat > "$W/p-shell" <<CONF
 algorithm aes-xts;
 iv-method encblkno1;
 keylength 256;
 verify_method none;
-keygen shell_cmd "$W/keycmd";
+keygen shell_cmd {
+	cmd "$W/keycmd";
+};
 CONF
-	sed 's/^/  /' "$W/p-shell"
-	echo "  --- cgdconfig cgd0 /dev/vnd0d p-shell ---"
-	cgdconfig cgd0 /dev/vnd0d "$W/p-shell" 2>&1 | sed 's/^/  /' && {
-		echo "  通った"
-		ls -l /dev/cgd0d 2>/dev/null | sed 's/^/  /'
-		cgdconfig -u cgd0 2>&1 | sed 's/^/  /' || true
-	} || echo "  駄目だった"
+		sed 's/^/    /' "$W/p-shell"
+		if run "cgdconfig cgd0" cgdconfig cgd0 /dev/vnd0d "$W/p-shell"; then
+			echo "  --- 開いた先 ---"
+			ls -l /dev/cgd0d 2>&1 | sed 's/^/    /'
+			# 本当に使えるか。書いて読めるか見る。
+			run "dd 書き込み" dd if=/dev/urandom of=/dev/rcgd0d bs=8k count=1 || true
+			cgdconfig -u cgd0 2>/dev/null || true
+			echo "  ==> $form で通る"
+			break
+		fi
+	done
 
 	say "片付け"
 	cgdconfig -u cgd0 2>/dev/null || true
@@ -70,23 +80,37 @@ CONF
 fi
 
 if [ "$(uname)" = OpenBSD ]; then
-	say "版と道具"
-	uname -r
-	ls -l /sbin/bioctl
+	say "vnd を作って RAID の区画を切る"
+	run "vnconfig" vnconfig vnd0 "$W/disk.img" || true
+	printf 'y\n' | fdisk -iy vnd0 > "$W/out" 2>&1 || true
+	# 区画 a を RAID 型で切る
+	cat > "$W/dl" <<'DL'
+a a
 
-	say "bioctl の使い方（鍵をファイルから渡せるか）"
-	bioctl 2>&1 | head -25 || true
 
-	say "man から鍵の渡し方"
-	man bioctl 2>/dev/null | grep -B2 -A6 -iE 'passphrase|keydisk|key disk' | head -40 \
-		|| echo "  man が読めない"
 
-	say "softraid の状態"
-	bioctl softraid0 2>&1 | head -10 || true
 
-	say "vnd を作る"
-	vnconfig vnd0 "$W/disk.img" 2>&1 | sed 's/^/  /' || true
-	disklabel vnd0 2>&1 | tail -6 | sed 's/^/  /' || true
+RAID
+w
+q
+DL
+	disklabel -E vnd0 < "$W/dl" > "$W/out" 2>&1 || true
+	disklabel vnd0 2>&1 | tail -4 | sed 's/^/    /'
+
+	say "stdin からパスフレーズを渡して crypto volume を作る"
+	# -s は /dev/stdin から読む。確認も再入力もしない。
+	# 鍵を手元に置かずに済むかどうかが、ここで決まる。
+	if printf 'this-is-a-test-passphrase\n' | bioctl -s -c C -l /dev/vnd0a softraid0 > "$W/out" 2>&1; then
+		echo "  [通った] bioctl -s -c C"
+		sed 's/^/    /' "$W/out"
+		SD=$(sed -n 's/.*\(sd[0-9]\+\).*/\1/p' "$W/out" | head -1)
+		echo "  出来た volume: ${SD:-不明}"
+		bioctl softraid0 2>&1 | head -8 | sed 's/^/    /'
+		[ -n "$SD" ] && run "detach" bioctl -d "$SD" || true
+	else
+		echo "  [駄目] bioctl -s -c C (exit $?)"
+		sed 's/^/    /' "$W/out"
+	fi
 
 	say "片付け"
 	vnconfig -u vnd0 2>/dev/null || true
