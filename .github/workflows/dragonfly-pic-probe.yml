@@ -22,3 +22,10 @@ jobs:
           # 我々の作った物だと、話がややこしくなる。
           prepare: pkg install -y rust binutils
           run: sh ci/dragonfly-pic-probe.sh
+
+      - name: log を持ち帰る
+        uses: actions/upload-artifact@v4
+        with:
+          name: pic-probe
+          path: probe-out/
+          if-no-files-found: warn

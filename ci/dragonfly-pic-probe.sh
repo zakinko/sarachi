@@ -18,6 +18,7 @@
 set -e
 say() { echo; echo "### $*"; }
 
+ROOT=$(pwd)
 W=$HOME/pic-probe
 rm -rf "$W"; mkdir -p "$W"; cd "$W"
 
@@ -115,6 +116,16 @@ fi
 
 say "落ちた場合の理由"
 grep -E 'relocation|recompile|error\[|error:' "$W/build.log" | head -8 | sed 's/^/  /' || true
+
+say "build.log を持ち帰る"
+# 部分的に grep して当たらなければ何も見えない、という形で二度外した。
+# log そのものを持ち帰って、手元で読む。
+mkdir -p "$ROOT/probe-out"
+cp "$W/build.log" "$ROOT/probe-out/build.log"
+wc -l < "$W/build.log" | awk '{print "  "$1" 行を持ち帰る"}'
+# object も一つ持ち帰る。relocation を手元で数え直せる。
+O=$(find "$W" -name '*agent*.o' 2>/dev/null | head -1)
+[ -n "$O" ] && cp "$O" "$ROOT/probe-out/agent.o" && echo "  agent.o も持ち帰る"
 
 say "片付け"
 cd "$HOME"; rm -rf "$W"
