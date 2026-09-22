@@ -58,7 +58,8 @@ pub trait Crypt {
 /// 取り返しがつかないので、確かめていない経路を通してはいけない。
 pub fn for_kind(kind: RootKind) -> Result<Box<dyn Crypt>> {
     match kind {
-        RootKind::LinuxLuks => Ok(Box::new(Luks)),
+        // DragonFly もここ。geli ではなく LUKS を持つことを実機で確かめた。
+        RootKind::LinuxLuks | RootKind::DragonFlyLuks => Ok(Box::new(Luks)),
         RootKind::FreeBsdZfs | RootKind::FreeBsdUfs => Ok(Box::new(Geli)),
         RootKind::NetBsdCgd | RootKind::NetBsdFfs => {
             bail!("cgd はまだ実装していない（NetBSD）。実機で確かめるまで入れない")
@@ -216,10 +217,10 @@ impl Crypt for Luks {
 
 /// FreeBSD と GhostBSD の geli。
 ///
-/// DragonFly もここに落ちてくるが、**DragonFly では確かめていない。**
-/// DragonFly は geli ではなく `dm_target_crypt`（LUKS 互換）を持つという
-/// 情報があり、本当ならこの実装ではなく `Luks` を通すのが正しい。実機で
-/// 確かめるまで、DragonFly でこれを使ってはいけない。
+/// **DragonFly はここへ来ない。** 以前は FreeBSD 系だからと geli に落として
+/// いたが、実機で確かめたところ /sbin/geli は存在せず、base に
+/// /sbin/cryptsetup と /sbin/dmsetup が在り、dm_target_crypt.ko が読み込めた。
+/// DragonFly は `RootKind::DragonFlyLuks` から `Luks` を通す。
 pub struct Geli;
 
 impl Geli {
@@ -327,6 +328,18 @@ mod tests {
                 "{k:?} の断り方: {e}"
             );
         }
+    }
+
+    #[test]
+    fn dragonflyはgeliではなくluks() {
+        // 実機で確かめた（2026-09-22）。/sbin/geli は存在せず、base に
+        // /sbin/cryptsetup と /sbin/dmsetup が在り、dm_target_crypt.ko が
+        // 読み込める。FreeBSD 系だからと geli を当てると起動時に必ず失敗する。
+        let c = match for_kind(RootKind::DragonFlyLuks) {
+            Ok(c) => c,
+            Err(e) => panic!("DragonFly で実装が見つからない: {e}"),
+        };
+        assert_eq!(c.name(), "LUKS2", "DragonFly に geli を当ててはいけない");
     }
 
     #[test]

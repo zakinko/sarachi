@@ -59,6 +59,7 @@ fn root_kind(args: &[String]) -> Result<RootKind> {
         .unwrap_or("linux-luks");
     Ok(match v {
         "linux-luks" => RootKind::LinuxLuks,
+        "dragonfly-luks" => RootKind::DragonFlyLuks,
         "freebsd-zfs" => RootKind::FreeBsdZfs,
         "freebsd-ufs" => RootKind::FreeBsdUfs,
         "netbsd-cgd" => RootKind::NetBsdCgd,

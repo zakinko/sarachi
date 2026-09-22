@@ -44,9 +44,18 @@ const TYPE_RECOVERY: &str = "5f9a1c7e-4b2d-4e8a-9c3f-1d6b8e0a7c24";
 pub enum RootKind {
     /// Linux LUKS。
     LinuxLuks,
-    /// FreeBSD / GhostBSD / DragonFly。geli は下に敷くだけで型は変えないので、
+    /// FreeBSD / GhostBSD。geli は下に敷くだけで型は変えないので、
     /// 上に載るファイルシステムの型を名乗る。
     FreeBsdZfs,
+    /// DragonFly。**geli ではなく LUKS。**
+    ///
+    /// 実機で確かめた（2026-09-22）。/sbin/geli は存在せず、base に
+    /// /sbin/cryptsetup と /sbin/dmsetup が在り、dm_target_crypt.ko が
+    /// 読み込める。FreeBSD 系だからと geli を当てると、起動時に必ず失敗する。
+    ///
+    /// 容器が LUKS である以上、型もそう名乗るのが正しい。Linux と同じ GUID を
+    /// 使うのは、同じ物だから。
+    DragonFlyLuks,
     FreeBsdUfs,
     /// NetBSD の cgd。
     NetBsdCgd,
@@ -59,6 +68,7 @@ impl RootKind {
     fn guid(self) -> &'static str {
         match self {
             RootKind::LinuxLuks => "ca7d7ccb-63ed-4c53-861c-1742536059cc",
+            RootKind::DragonFlyLuks => "ca7d7ccb-63ed-4c53-861c-1742536059cc",
             RootKind::FreeBsdZfs => "516e7cba-6ecf-11d6-8ff8-00022d09712b",
             RootKind::FreeBsdUfs => "516e7cb6-6ecf-11d6-8ff8-00022d09712b",
             RootKind::NetBsdCgd => "2db519ec-b10f-11dc-b99b-0019d1879648",
@@ -72,7 +82,10 @@ impl RootKind {
     /// FreeBSD の geli と OpenBSD の softraid は型を変えないので、
     /// 型だけからは暗号化されているか分からない。分かるのは Linux と NetBSD。
     pub fn names_encryption(self) -> bool {
-        matches!(self, RootKind::LinuxLuks | RootKind::NetBsdCgd)
+        matches!(
+            self,
+            RootKind::LinuxLuks | RootKind::DragonFlyLuks | RootKind::NetBsdCgd
+        )
     }
 }
 

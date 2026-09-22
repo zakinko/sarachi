@@ -212,7 +212,7 @@ zbus(D-Bus) は ports/pkgsrc にあるが依存を切れるなら切る。
 | Linux | `cryptsetup luksErase` | `blkdiscard` / `nvme format` / `hdparm` | kexec + initramfs |
 | FreeBSD / GhostBSD | geli 鍵破棄 | `camcontrol security` / `nvmecontrol format` | 最小 root へ reboot |
 | NetBSD | cgd 鍵破棄 | `dkctl discard` / `atactl` | 最小 root へ reboot |
-| DragonFly | dm_target_crypt (LUKS) ※**要検証** | FreeBSD 系ツール | 最小 root へ reboot |
+| DragonFly | **dm_target_crypt (LUKS)** — 実機で確認 | FreeBSD 系ツール | 最小 root へ reboot |
 | OpenBSD | softraid crypto 鍵破棄 (`bioctl`) | `dd` 主体 | **kexec 相当が無い** |
 | Raspberry Pi | 同上（唯一の手段） | **不可**（ウェアレベリング） | — |
 
@@ -632,6 +632,36 @@ vendor した crate を書き換えても cargo は拒まない。
   `/usr/lib/systemd` を期待するので、そこは OS ごとの結合部として残る
 - **回復環境は対象外。** 自己完結した initramfs なのでパッケージにする必要がない。
   pkgsrc が効くのはエージェント側
+
+### DragonFly は geli を持っていなかった（2026-09-22）
+
+`crypt.rs` は DragonFly を「FreeBSD 系だから」と `RootKind::FreeBsdZfs` /
+`FreeBsdUfs` 経由で `Geli` に落としていた。**実機で確かめたら誤りだった。**
+
+```
+=== geli はあるか ===
+  無い
+=== cryptsetup はあるか ===
+  /sbin/cryptsetup
+=== dm と dm_target_crypt ===
+  /sbin/dmsetup
+  dm_target_crypt: Successfully initialized
+```
+
+`/sbin/geli` は存在しない。base に `cryptsetup` と `dmsetup` が在り、
+`dm_target_crypt.ko` が読み込める。つまり **DragonFly は Linux と同じ LUKS**
+で、既にある `Luks` 実装がそのまま使える。
+
+そのままにしていれば、導入した機体が**起動時に必ず失敗**していた。しかも
+落ちるのは provisioning の終盤、鍵を作って容器を作ろうとした所なので、
+disk を切った後になる。
+
+`RootKind::DragonFlyLuks` を足して `Luks` へ通した。型 GUID は Linux と同じ
+`ca7d7ccb-…`（LUKS）にした。容器が LUKS である以上、型もそう名乗るのが正しい。
+
+**「同じ系統だから同じ道具」は当てにならない。** FreeBSD 派生であることと、
+FreeBSD の道具を持っていることは別で、確かめずに束ねたのが誤りの元だった。
+試験で固定してある。
 
 ### cgd には keyslot が無い（2026-09-22）— NetBSD だけ消し方が変わる
 
