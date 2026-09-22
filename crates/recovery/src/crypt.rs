@@ -53,23 +53,13 @@ pub trait Crypt {
 
     /// 鍵材料がディスク上にあるか。
     ///
-    /// LUKS と geli は在る。ヘッダの中に鍵の入れ物を持っていて、そこを潰せば
-    /// 中身は戻らない。**cgd には無い。** cgd は容器のヘッダを持たず、鍵は
-    /// params の側にある。
-    ///
-    /// だから cgd の消去は「ここで壊す」にならない。鍵を手元に置かない形
-    /// （起動のたびに control plane から取る）にしたうえで、消去は control
-    /// plane で失効させることそのものになる。**黙って成功を返すわけには
-    /// いかない**ので、呼ぶ側がこれを見て別の道を通る。
+    /// LUKS と geli と softraid は在る。**cgd には無い**ので、そこでは
+    /// [`Crypt::erase`] が使えない。呼ぶ側はこれを見て別の道を通る。
     fn has_on_disk_key(&self) -> bool {
         true
     }
 }
 
-/// root に載る物から暗号層を選ぶ。
-///
-/// 実装していない OS では、黙って別の手を使うのではなく断る。消去は
-/// 取り返しがつかないので、確かめていない経路を通してはいけない。
 /// 暗号層を組み立てるのに要る、台ごとの事情。
 ///
 /// LUKS と geli は device と鍵だけで済むが、**cgd は済まない。** 鍵を手元に
@@ -94,6 +84,10 @@ impl Default for Setup<'_> {
     }
 }
 
+/// root に載る物から暗号層を選ぶ。
+///
+/// 確かめていない経路は通さない。消去は取り返しがつかないので、黙って別の
+/// 手に落ちるより断るほうがよい。
 pub fn for_kind(kind: RootKind, cx: &Setup) -> Result<Box<dyn Crypt>> {
     match kind {
         // DragonFly もここ。geli ではなく LUKS を持つことを実機で確かめた。
@@ -290,10 +284,8 @@ impl Crypt for Luks {
 
 /// FreeBSD と GhostBSD の geli。
 ///
-/// **DragonFly はここへ来ない。** 以前は FreeBSD 系だからと geli に落として
-/// いたが、実機で確かめたところ /sbin/geli は存在せず、base に
-/// /sbin/cryptsetup と /sbin/dmsetup が在り、dm_target_crypt.ko が読み込めた。
-/// DragonFly は `RootKind::DragonFlyLuks` から `Luks` を通す。
+/// **DragonFly はここへ来ない。** geli を持たないので `Luks` を通す。
+/// 理由は [`RootKind::DragonFlyLuks`] の側に書いた。
 pub struct Geli;
 
 impl Geli {
@@ -374,21 +366,16 @@ impl Crypt for Geli {
 
 /// NetBSD の cgd。
 ///
-/// **他の三つと成り立ちが違う。** LUKS も geli も softraid も、暗号化された
-/// ディスクの中に鍵の入れ物を持っている。cgd は持たない。ディスクには何も
-/// 書かれず、鍵をどう作るかは params ファイルの側にある。
+/// **他の三つと成り立ちが違う。** LUKS も geli も softraid も暗号化した
+/// ディスクの中に鍵の入れ物を持つが、cgd は持たない。ディスクには何も
+/// 書かれず、鍵の作り方は params ファイルの側にある。
 ///
-/// 素直に `storedkey`（鍵を params に書く）を使うと、消去は普通のファイルを
-/// 消すことになる。**それは crypto-erase を選んだ理由そのものに反する。**
-/// SD と SSD ではウェアレベリングのせいで削除が消去として成立しないから
-/// 鍵を壊す方式にしたのに、その鍵がファイルとして置かれていては元の木阿弥。
+/// 素直に `storedkey`（鍵を params に書く）を使うと、消去が普通のファイル
+/// 削除になり、[`Crypt::erase`] の言う理由で成立しない。そこで `shell_cmd`
+/// を使い、鍵を手元に置かずに開くたび control plane から取る。代わりに
+/// 開くたび網が要り、消去の保証は control plane に乗る。
 ///
-/// なので `shell_cmd` を使う。鍵を手元に置かず、開くたびに control plane から
-/// 取る。**消す物が手元に無ければ、消えたかどうかを flash の挙動に賭けずに
-/// 済む。** 代わりに開くたびに網が要り、消去の保証は control plane に乗る。
-///
-/// 実機で確かめた（2026-09-22）。block 形式で、鍵は生の 32 バイトを
-/// そのまま stdout に出せばよい。
+/// 書式は実機で確かめた。block 形式で、鍵は生の 32 バイトを stdout に出す。
 ///
 /// ```text
 /// keygen shell_cmd {
@@ -750,9 +737,7 @@ mod tests {
 
     #[test]
     fn dragonflyはgeliではなくluks() {
-        // 実機で確かめた（2026-09-22）。/sbin/geli は存在せず、base に
-        // /sbin/cryptsetup と /sbin/dmsetup が在り、dm_target_crypt.ko が
-        // 読み込める。FreeBSD 系だからと geli を当てると起動時に必ず失敗する。
+        // 理由は RootKind::DragonFlyLuks の側に書いた。
         let c = match for_kind(RootKind::DragonFlyLuks, &Setup::default()) {
             Ok(c) => c,
             Err(e) => panic!("DragonFly で実装が見つからない: {e}"),

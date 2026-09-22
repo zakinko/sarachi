@@ -1,30 +1,15 @@
 //! 鍵の逃がし方。
 //!
-//! 台ごとの鍵を作るのは [`crate::crypt`] だが、それをどこへ預けるかはここ。
+//! 鍵を作るのは [`crate::crypt`]、預け先を決めるのはここ。消去は鍵を壊す
+//! ことで成り立つので、**預け先がそのまま「本当に消えたか」を決める**。
+//! 控えが残っていれば消したことにならず、どこにも無ければ救えない。
 //!
-//! **預け先がそのまま「本当に消えたか」を決める。** 消去は鍵を壊すことで
-//! 成り立っているので、控えがどこかに残っていれば消したことにならない。逆に
-//! どこにも無ければ、消したい時ではなく**救いたい時**に台が戻らない。
+//! BitLocker と同じく、一つの鍵を複数の手段で包む。control plane を正、
+//! TPM を補助、パスフレーズを非常口とする。
 //!
-//! # 三枚重ねにする
-//!
-//! BitLocker と同じ形を採る。あちらは FVEK を VMK が包み、VMK を複数の
-//! protector が包む。protector を足し引きしてもディスクを暗号化し直さずに
-//! 済む構造で、LUKS の「マスター鍵＋keyslot」と同じ。
-//!
-//! | | 位置 | できること | 諦めるもの |
-//! |---|---|---|---|
-//! | control plane | **正** | 中央で失効できる。台が壊れても管理者が救える | 起動時に網が要る |
-//! | TPM | 補助 | 網なしで自分で開く | **Pi に無い**。PCR が変われば開かない |
-//! | パスフレーズ | 非常口 | 仕掛けが要らない | 無人で起動できない |
-//!
-//! **TPM を正に据えられないのは、標的に Raspberry Pi を含めたため。** そこが
-//! BitLocker をそのまま写せない唯一の点で、裏を返せば control plane を正に
-//! 置く判断は Pi を入れた時点でほぼ決まっている。
-//!
-//! Windows で回復パスワードが預けられる先は、今は Entra ID の device object。
-//! 我々も同じ所へ預ければ、**管理者の手順が Windows と同じになる**。
-//! `libhimmelblau` が使える以上、そこは他の Linux 用 MDM に無い筋になる。
+//! **TPM を正に据えないのは Raspberry Pi が持たないため。** 標的に含めた
+//! 時点で、網の向こうに預ける形が必然になっている。NetBSD ではさらに強く、
+//! cgd が keyslot を持たないので control plane 以外に健全な消去が無い。
 
 use anyhow::{Context, Result, bail};
 use std::io::Read;
@@ -70,11 +55,7 @@ pub fn for_kind(kind: Kind) -> Result<Box<dyn Escrow>> {
     match kind {
         Kind::File(p) => Ok(Box::new(FileEscrow { path: p })),
         Kind::ControlPlane { base, token } => Ok(Box::new(ControlPlaneEscrow { base, token })),
-        Kind::Tpm => bail!(
-            "TPM はまだ実装していない。実機で確かめるまで入れない。\n\
-             なお TPM は補助であって正ではない。Raspberry Pi が持たないので、\n\
-             これを前提にした設計にはできない"
-        ),
+        Kind::Tpm => bail!("TPM はまだ実装していない。実機で確かめるまで入れない"),
     }
 }
 
