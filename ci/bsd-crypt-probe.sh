@@ -88,8 +88,19 @@ if [ "$(uname)" = OpenBSD ]; then
 	# disklabel -E に対話入力を流す形では型が付かなかった（4.2BSD のまま
 	# になり、bioctl が "invalid metadata format" で断った）。今ある label を
 	# 書き出し、型だけ置き換えて -R で戻す。対話に頼らない。
+	# 区画 a を新しく書く。前の回は型を直すことだけ考えて、a を作る方を
+	# 落としていた。素の vnd には c しか無いので、4.2BSD を RAID に置き換える
+	# 対象が存在せず、a の無い label を書き込んでいた。
 	disklabel vnd0 > "$W/label" 2>/dev/null || true
-	sed 's/4\.2BSD.*/RAID/' "$W/label" > "$W/label.raid"
+	TOTAL=$(awk '$1 == "c:" { print $2 }' "$W/label")
+	[ -n "$TOTAL" ] || TOTAL=131072
+	ASIZE=$((TOTAL - 128))
+	awk -v sz="$ASIZE" '
+		/^  c:/ { print "  a: " sz " 128 RAID" }
+		{ print }
+	' "$W/label" > "$W/label.raid"
+	echo "  --- 書き込む label ---"
+	sed -n '/16 partitions/,$p' "$W/label.raid" | sed 's/^/    /'
 	run "disklabel -R" disklabel -R vnd0 "$W/label.raid" || true
 	echo "  --- 切った結果 ---"
 	disklabel vnd0 2>&1 | tail -4 | sed 's/^/    /'
