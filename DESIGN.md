@@ -633,6 +633,84 @@ vendor した crate を書き換えても cargo は拒まない。
 - **回復環境は対象外。** 自己完結した initramfs なのでパッケージにする必要がない。
   pkgsrc が効くのはエージェント側
 
+### BSD 五つの暗号層が揃った（2026-09-22）
+
+`for_kind` が断る標的は無くなった。
+
+| RootKind | 暗号層 | 鍵材料の在処 |
+|---|---|---|
+| LinuxLuks | LUKS2 | ディスク（keyslot） |
+| **DragonFlyLuks** | LUKS2 | ディスク（keyslot） |
+| FreeBsdZfs / FreeBsdUfs | geli | ディスク（metadata） |
+| **NetBsdCgd / NetBsdFfs** | cgd | **どこにも無い** |
+| **OpenBsdData** | softraid crypto | ディスク（masked key） |
+
+#### cgd だけ消去の形が違う
+
+他の三つは「ディスクの中の鍵材料を潰す」で消去が完結する。cgd は容器の
+ヘッダを持たないので、潰す物が無い。
+
+素直に `storedkey`（鍵を params に書く）を使うと、消去は普通のファイルを
+消すことになる。**それは crypto-erase を選んだ理由そのものに反する。** SD と
+SSD ではウェアレベリングのせいで削除が消去として成立しないから鍵を壊す方式に
+したのに、その鍵がファイルとして置かれていては元の木阿弥。
+
+なので `shell_cmd` を使い、**鍵を手元に置かない**。開くたびに control plane
+から取る。params に入るのは「どう取ってくるか」だけで、読まれても鍵にならない。
+
+```text
+keygen shell_cmd {
+	cmd "sarachi-recovery key-fetch --device-id … --escrow-url …";
+};
+```
+
+`erase` は断る。黙って成功を返すと「消したつもりで消えていない」になる。
+**消去の誤りは、取り返しがつかない側ではなく消え残る側に倒れる方が危ない。**
+`wipe` も `has_on_disk_key` を見て、control plane で失効させるよう促す。
+
+その一行が型として違いを持っている。
+
+```rust
+fn has_on_disk_key(&self) -> bool { false }
+```
+
+#### softraid で決めたこと
+
+**パスフレーズは 16 進で一行にする。** `bioctl` は行として読むので生のバイトは
+渡せない。改行や NUL が混じると**そこで切れた物が鍵として通ってしまう**——
+気づきにくく、鍵の強度だけが静かに落ちる壊れ方になる。
+
+**消去は `SR_DATA_OFFSET` まで潰す。** `geli kill` に当たる命令が `bioctl` に
+無いので、鍵の在処を直接消す。`sys/dev/softraidvar.h` より
+
+```text
+SR_DATA_OFFSET = SR_META_OFFSET(16) + SR_META_SIZE(64)
+               + SR_BOOT_LOADER_SIZE(320) + SR_BOOT_BLOCKS_SIZE(128) = 528
+```
+
+容器かどうかは chunk の頭の magic で見る。`SR_MAGIC` は little-endian で
+並べると `marcCRAM`。
+
+#### 実機で確かめるまでに三度外した
+
+softraid の下調べは三回やり直している。**三回とも OpenBSD ではなくこちらの
+不備。**
+
+| 回 | 何が起きたか |
+|---|---|
+| 1 | 区画の型が `4.2BSD` のまま → `invalid metadata format` |
+| 2 | 型を直すのに気を取られ、**区画 `a` を作る段ごと外した** → `Device not configured` |
+| 3 | 通った |
+
+2 は 1 の対処（`disklabel -E` の対話入力をやめる）の副作用で、直した結果を
+確かめずに次へ進んだために起きた。**直した副作用を見る**のは、直すことと
+同じだけ要る。
+
+cgd の一回目はもっと悪い。`cgdconfig … | sed … && echo 通った` と書いたので
+判定していたのは `sed` の終了状態で、構文誤りが出ているのに「通った」と
+表示していた。**同じ罠はこの作業の序盤にも踏んでいる**（`make | tail` で
+建っていないのに建ったと報告した）。今は `run()` に閉じ込めてある。
+
 ### 鍵の逃がし方を決めて、control plane を作った（2026-09-22）
 
 **control plane を正、TPM を補助、パスフレーズを非常口。** BitLocker と同じ
