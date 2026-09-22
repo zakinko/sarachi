@@ -78,9 +78,12 @@ done
 [ -e /usr/local/libdata/pkgconfig/libssh2.pc ] \
 	|| { echo "libssh2.pc が無い" >&2; exit 1; }
 # pkg install は依存の都合で既に入っている物を消すことがある。種を消された
-# まま 20 分建ててから気づくのは高いので、ここで見る。
-[ -x /usr/local/bin/rustc ] \
-	|| { echo "pkg install が種の rustc を消した" >&2; exit 1; }
+# まま 20 分建ててから気づくのは高いので、ここで見る。二段目からは種を
+# artifact から入れるので、pkg の rust が消えていても構わない。
+if [ -z "$BOOTSTRAP_VER" ] && [ ! -x /usr/local/bin/rustc ]; then
+	echo "pkg install が種の rustc を消した" >&2
+	exit 1
+fi
 echo "  zstd: $(ls /usr/local/lib/libzstd.* | tr '\n' ' ')"
 if [ -n "$BOOTSTRAP_URL" ] && [ -z "$BOOTSTRAP_VER" ]; then
 	echo "置き場を渡すなら、種の版も要る" >&2
