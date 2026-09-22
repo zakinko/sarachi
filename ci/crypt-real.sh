@@ -29,9 +29,11 @@ DragonFly)
 	# いないので明示する。
 	kldload dm 2>/dev/null || true
 	kldload dm_target_crypt 2>/dev/null || true
-	vnconfig vnd0 "$W/disk.img"
-	DEV=/dev/vnd0
-	cleanup() { vnconfig -u vnd0 2>/dev/null || true; }
+	# DragonFly は vnd ではなく vn で、-c が要る（usr.sbin/vnconfig）。
+	# NetBSD と OpenBSD の vnconfig とは綴りも形も違う。
+	vnconfig -c vn0 "$W/disk.img"
+	DEV=/dev/vn0
+	cleanup() { vnconfig -u vn0 2>/dev/null || true; }
 	;;
 NetBSD)
 	vnconfig vnd0 "$W/disk.img"
