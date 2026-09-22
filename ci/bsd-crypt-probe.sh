@@ -83,18 +83,15 @@ if [ "$(uname)" = OpenBSD ]; then
 	say "vnd を作って RAID の区画を切る"
 	run "vnconfig" vnconfig vnd0 "$W/disk.img" || true
 	printf 'y\n' | fdisk -iy vnd0 > "$W/out" 2>&1 || true
-	# 区画 a を RAID 型で切る
-	cat > "$W/dl" <<'DL'
-a a
-
-
-
-
-RAID
-w
-q
-DL
-	disklabel -E vnd0 < "$W/dl" > "$W/out" 2>&1 || true
+	# 区画 a を RAID 型にする。
+	#
+	# disklabel -E に対話入力を流す形では型が付かなかった（4.2BSD のまま
+	# になり、bioctl が "invalid metadata format" で断った）。今ある label を
+	# 書き出し、型だけ置き換えて -R で戻す。対話に頼らない。
+	disklabel vnd0 > "$W/label" 2>/dev/null || true
+	sed 's/4\.2BSD.*/RAID/' "$W/label" > "$W/label.raid"
+	run "disklabel -R" disklabel -R vnd0 "$W/label.raid" || true
+	echo "  --- 切った結果 ---"
 	disklabel vnd0 2>&1 | tail -4 | sed 's/^/    /'
 
 	say "stdin からパスフレーズを渡して crypto volume を作る"
