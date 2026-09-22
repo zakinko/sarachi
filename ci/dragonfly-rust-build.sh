@@ -167,32 +167,6 @@ echo "  sha256 一致"
 tar xf "$SRC"
 cd "rustc-${VERSION}-src"
 
-say "-fPIC を付ける cc の包みを作る"
-# DragonFly は既定で PIE を作るが、-sys crate が建てる C の source には
-# -fPIC が付かない。cargo の link で libssh2-sys がこうなる。
-#
-#   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
-#     .rodata.str1.1 can not be used when making a PIE object
-#
-# 環境変数では届かなかった。素の CFLAGS は bootstrap が立てる
-# CFLAGS_<triple を下線にした物> に負け、その名前で渡しても tool
-# （cargo）を建てる経路では効かなかった。config.toml の [target.*] に
-# cflags という項目は無い。
-#
-# cc 自体を包めば、どの経路から呼ばれても付く。cc と cxx は [target.*] が
-# 受け付ける項目なので、そこから指す。
-mkdir -p "$WRK/bin"
-cat > "$WRK/bin/cc" <<'WRAP'
-#!/bin/sh
-exec /usr/bin/cc -fPIC "$@"
-WRAP
-cat > "$WRK/bin/c++" <<'WRAP'
-#!/bin/sh
-exec /usr/bin/c++ -fPIC "$@"
-WRAP
-chmod +x "$WRK/bin/cc" "$WRK/bin/c++"
-"$WRK/bin/cc" --version | head -1 | sed 's/^/  /'
-
 say "config.toml を書く"
 # この heredoc は変数を展開させるので引用していない。つまり中身は shell に
 # 読まれる。backtick を書くと command substitution として実行され、comment の
@@ -247,8 +221,6 @@ debug-assertions = false
 
 [target.${TRIPLE}]
 llvm-config = "${LLVM_CONFIG}"
-cc = "${WRK}/bin/cc"
-cxx = "${WRK}/bin/c++"
 CONF
 cat config.toml | sed 's/^/  /'
 
@@ -262,9 +234,15 @@ export LDVER
 #
 #   ld.bfd: cannot find -lzstd
 #
-# になる。DPorts の lang/rust が外の LLVM を使うときに同じことをしている
-# （PORT_LLVM_MAKE_ENV= RUSTFLAGS="-Lnative=${LOCALBASE}/lib"）。
-RUSTFLAGS="-Lnative=/usr/local/lib"
+# になる。
+#
+# **-Lnative ではなく -Clink-arg で渡すこと。** -Lnative は rustc が静的
+# ライブラリを探す所にも効くので、build script が cargo:rustc-link-search で
+# 指す OUT_DIR より先に /usr/local/lib が見られる。その結果、cc-rs が -fPIC で
+# 建てた libssh2.a ではなく、pkg の非 PIC な /usr/local/lib/libssh2.a が rlib に
+# 取り込まれ、cargo の link が PIE で落ちる。-Clink-arg なら最終 link にしか
+# 効かず、どちらを取り込むかには影響しない。
+RUSTFLAGS="-Clink-arg=-L/usr/local/lib"
 export RUSTFLAGS
 # bootstrap は自分の段ごとに RUSTFLAGS を組み直すので、そちらにも渡す。
 RUSTFLAGS_BOOTSTRAP=$RUSTFLAGS
@@ -273,63 +251,13 @@ export RUSTFLAGS_BOOTSTRAP RUSTFLAGS_NOT_BOOTSTRAP
 # cc が link するときにも効かせる。
 LIBRARY_PATH=/usr/local/lib
 export LIBRARY_PATH
-# DragonFly は既定で PIE を作るが、cc crate が建てる C の source には
-# -fPIC が付かない。cargo の link で libssh2-sys がこうなる。
-#
-#   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
-#     .rodata.str1.1 can not be used when making a PIE object
-#
-# 同じ物を要求する -sys crate は他にもある（libgit2 blake3 psm）ので、
-# 個別にではなく CFLAGS で一度に渡す。
-# DragonFly は既定で PIE を作るが、-sys crate が建てる C の source には
-# -fPIC が付かない。cargo の link で libssh2-sys がこうなる。
-#
-#   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
-#     .rodata.str1.1 can not be used when making a PIE object
-#
-# 素の CFLAGS では届かない。bootstrap が target ごとに CFLAGS_<triple を
-# 下線にした物> を立てるので、cc crate から見てそちらが強い。config.toml の
-# [target.*] には cflags という項目が無い（cc cxx ar ranlib default-linker
-# linker split-debuginfo llvm-config …）ので、そこにも書けない。
-#
-# bootstrap はその環境変数を読んで自分の flag に継ぎ足す作りになっている
-# （src/bootstrap/src/core/builder/cargo.rs）。同じ名前で渡せば通る。
-# libssh2 は package の物を使い、C を建てさせない。
-#
-# cargo が抱える libssh2-sys は cc::Build で C を建てるが、その object に
-# -fPIC が付かず、DragonFly が既定で作る PIE と衝突する。
-#
-#   liblibssh2_sys-....rlib(agent.o): relocation R_X86_64_32 against
-#     .rodata.str1.1 can not be used when making a PIE object
-#
-# -fPIC を渡す道は三つ試して、どれも届かなかった。素の CFLAGS は bootstrap が
-# 立てる CFLAGS_<triple> に負ける。その名前で渡しても tool を建てる経路では
-# 効かない。config.toml の [target.*] の cc を包んでも同じだった。
-#
-# build.rs が LIBSSH2_SYS_USE_PKG_CONFIG という逃げ道を持っている。これは
-# build script が環境から直接読むので、bootstrap が上書きする余地が無い。
-# 建てないものは壊れない。
-#
-# 代償として、出来た cargo は package の libssh2 を要る。rustc の方は
-# 自己完結のままなので、そちらは影響を受けない。
-# SARACHI_PIC_PROBE を立てると、この逃げ道を使わずに C を建てる。落ちるのを
-# 承知で走らせ、cc がどう呼ばれたかを捕まえるため。普段は立てない。
-if [ -z "${SARACHI_PIC_PROBE:-}" ]; then
-	LIBSSH2_SYS_USE_PKG_CONFIG=1
-	export LIBSSH2_SYS_USE_PKG_CONFIG
-else
+# SARACHI_PIC_PROBE を立てると cc がどう呼ばれたかを捕まえる。普段は不要。
+if [ -n "${SARACHI_PIC_PROBE:-}" ]; then
 	echo "### [下調べ] libssh2 の C を建てる。落ちるのを承知で cc の呼ばれ方を見る"
 	CC_ENABLE_DEBUG_OUTPUT=1
 	export CC_ENABLE_DEBUG_OUTPUT
 fi
 
-TU=$(echo "$TRIPLE" | tr - _)
-eval "CFLAGS_${TU}=-fPIC; export CFLAGS_${TU}"
-eval "CXXFLAGS_${TU}=-fPIC; export CXXFLAGS_${TU}"
-# bootstrap を経由しない build script のために素の方も置く。
-CFLAGS="-fPIC"
-CXXFLAGS="-fPIC"
-export CFLAGS CXXFLAGS
 LD_LIBRARY_PATH=$BOOT/lib:/usr/lib/gcc80
 export LD_LIBRARY_PATH
 if [ -n "${SARACHI_PIC_PROBE:-}" ]; then
