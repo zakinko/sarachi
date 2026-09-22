@@ -1,0 +1,53 @@
+# 建てた rustc で libhimmelblau が実際に建つかを、DragonFly 実機で確かめる。
+#
+# 1.85.1 を種に 1.86 1.87 1.88 と三段積んだのは libhimmelblau のためなので、
+# それが建たなければ意味が無い。rustc が出来たことと、目的が達せられたことは
+# 別なので、別の workflow にして別に確かめる。
+#
+# cross では答えが出ない。openssl-sys aws-lc-sys ring と C のライブラリを
+# 三つ要り、DragonFly の base は LibreSSL 3.6.1 なので実機で建てるしかない。
+name: dragonfly-libhimmelblau
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '使う rustc の版 (例 1.88.0)'
+        required: true
+      rustc_run_id:
+        description: 'その rustc を出した dragonfly-rust の run の id'
+        required: true
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 建てた rustc を降ろす
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.rustc_run_id }}
+          github-token: ${{ github.token }}
+          path: toolchain
+          merge-multiple: true
+
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          release: '6.4.2'
+          usesh: true
+          # rust は入れない。建てた物を使うのが主旨で、pkg の 1.85.1 が
+          # PATH に居ると取り違えの元になる。libssh2 も挙げない（既に在り、
+          # 挙げると pkg が upgrade を試みて他を巻き添えにする）。
+          prepare: pkg install -y bash cmake ninja git python3 curl pkgconf
+          run: |
+            set -e
+            sh ci/dragonfly-libhimmelblau.sh '${{ inputs.version }}' toolchain
