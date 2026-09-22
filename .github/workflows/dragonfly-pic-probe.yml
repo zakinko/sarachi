@@ -1,0 +1,24 @@
+# -fPIC が付かない件を測って突き止める。理屈では「付くはず」にしかならない
+# ので、実際に叩かれた command line と object を見る。
+# 原因が分かったら消す。
+name: dragonfly-pic-probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          release: '6.4.2'
+          usesh: true
+          # 建てた 1.88 ではなく pkg の rust を使う。落ちたときの報告先が
+          # 我々の作った物だと、話がややこしくなる。
+          prepare: pkg install -y rust binutils
+          run: sh ci/dragonfly-pic-probe.sh
