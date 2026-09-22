@@ -633,6 +633,86 @@ vendor した crate を書き換えても cargo は拒まない。
 - **回復環境は対象外。** 自己完結した initramfs なのでパッケージにする必要がない。
   pkgsrc が効くのはエージェント側
 
+### DragonFly 向けの rustc を自前で建てた（2026-09-22）— libhimmelblau が建つ
+
+Entra 認証に要る `libhimmelblau` は rustc **1.88** を要るが、DPorts が配るのは
+1.85.1 で 2025-04-05 から動いていない。DPorts の `Makefile.DragonFly` が
+bootstrap の取得元に指している `leaf.dragonflybsd.org/~mneumann/rust/` も
+1.84.1 が最後。tier 3 なので rust 本家は binary を出さない。**新しい rust は
+上流のどこにも無い。**
+
+1.88 が下限であることは実測した。1.87 では `scraper` 0.27.0 の let-chains が
+通らず、1.88 で建つ。rustc は一つ前の版でしか建たないので三段積んだ。
+
+| 段 | 種 | 作った物 | 所要 |
+|---|---|---|---|
+| 1 | 1.85.1（DPorts の package） | 1.86.0 | 42 分 |
+| 2 | 1.86.0（自作） | 1.87.0 | 59 分 |
+| 3 | 1.87.0（自作） | 1.88.0 | 43 分 |
+
+**目的も達した。** その 1.88.0 で `libhimmelblau` 0.8.41 が DragonFly 実機で
+3 分で建つ。
+
+**LibreSSL の問いが決着した。** 長く「cross では答えが出ない」としていた
+`openssl-sys` が、DragonFly の **LibreSSL 3.6.1 で通る**。`aws-lc-sys` と
+`ring` も建つ。
+
+#### 踏んだもの
+
+一段目を通すまでに九つあった。どれも建ててみないと出てこない種類で、
+これが誰も自動で建てていない理由でもある。
+
+| | 何 | どう片付けたか |
+|---|---|---|
+| 1 | `sha256` に `-c` が無い（FreeBSD にはある） | `-q` で出して自分で比べる |
+| 2 | LLVM の版は rustc の版が決める | 版から表で引く。`lld` は版差の `#if` を持たない |
+| 3 | 合わない LLVM が在ると `lld` が CMake でそちらを拾う | 合う版だけを置く |
+| 4 | base に `bash` が無く `install.sh` が動かない | `pkg install bash` |
+| 5 | 動的 link した rustc は次の段で動かない | 静的 link（`link-shared` の既定）に戻す |
+| 6 | 静的 LLVM は `zstd` を要る | `pkg install zstd` |
+| 7 | `/usr/local/lib` は linker の探索路に無い | `RUSTFLAGS=-Lnative=...`（DPorts が同じことをしている） |
+| 8 | `libssh2-sys` の C が PIE と衝突 | `LIBSSH2_SYS_USE_PKG_CONFIG` で建てさせない |
+| 9 | **`pkg install libssh2` が rust を巻き添えで消す** | 名前を挙げない（既に入っている） |
+
+9 が一番厄介だった。8 を解くための操作が、種そのものを壊していた。
+
+```
+Installed packages to be REMOVED:
+    curl: 8.10.0
+    git: 2.49.0
+    rust: 1.85.1        <- 種の rustc
+```
+
+repo が移行中で、新しい `libssh2` (1.11.1) に合わせて建て直した rust がまだ
+無いためだった。`libssh2` 1.11.0 は最初から入っている（rust と git と curl の
+依存として）ので、名前を挙げる必要は元々なかった。
+
+8 では手際が悪かった。`-fPIC` を渡す道を三つ（素の `CFLAGS`、
+`config.toml` の `cflags`、`cc` の包み）試して一時間ずつ溶かしてから、
+`build.rs` を読んで逃げ道を見つけた。**受け取る側が何を見ているかを先に
+確かめるべきで**、渡し方を変えて試すのは順序が逆だった。`llvm-project` の
+版や bootstrap の `cargo.rs` では source を読む手が効いていたので、同じ手を
+早く使えばよかった。
+
+#### 入れた歯止め
+
+- `ci/shell-lint.sh` — `sh -n` と、heredoc 内の command substitution の検出。
+  CI で毎回走る。`config.toml` を作る heredoc は変数を展開させるため引用して
+  いないので、comment の中の引用文字が実行される。二度やった。一度目は失敗
+  log を貼った所で `rustc -vV` が静かに走り、その行が空になった（log に
+  出ていたのに見落とした）。二度目は Syntax error で一時間分を落とした
+- package 導入の直後に実体を見る — `libzstd`、`libssh2.pc`、そして種の
+  `rustc` が残っていること
+- LLVM の版は script が決める。表に無い版なら、どこを見て足すかを言って止まる
+
+#### 出来た物の性質
+
+`rustc` は自己完結（LLVM を静的に取り込む）。**`cargo` は package の
+`libssh2` を要る** — PIE との衝突を避けて C を建てなかった結果。
+
+名前は mneumann 氏の形に揃えた。`Makefile.DragonFly` がその置き場を
+`MASTER_SITES` に持っているので、いずれ上流へ戻すときに名前を変えずに済む。
+
 ### geli を実装した（2026-09-21）— BSD 側の一つ目が埋まった
 
 `for_kind` が返せるのは `Luks` だけだった。12 標的を挙げておきながら、端から
