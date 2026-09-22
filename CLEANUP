@@ -53,11 +53,14 @@
 #   その後 recovery-env/alpine/build.sh と bundle.sh で回復環境は再現できる。
 
 # 2026-09-22 00:11  lima インスタンス freebsd-arm64 (qemu, 4cpu/8GB/40GB)
-#   limactl stop freebsd-arm64 && limactl delete freebsd-arm64
-#   → geli を実機で確かめるために立て直した。CI が FreeBSD で
-#     ci/crypt-real.sh を走らせるようになったので、手元での再確認が
-#     要らなければ消してよい。cgd や softraid に進むときは NetBSD と
-#     OpenBSD の VM を別に立てることになる。
-#   VM の中に置いたもの: ~/src.tgz ~/run-real.sh ~/ci-try.sh
-#     ~/geli-test.sh（作業木 ~/sarachi-geli ~/sarachi-ci は script が
-#     自分で消している）。VM ごと消せば無くなる。
+#   → 2026-09-22 15:55 に削除済み。geli を実機で確かめるために立てたが、
+#     CI が FreeBSD で ci/crypt-real.sh を走らせるようになったので役目を
+#     終えた。VM の中に置いた物も一緒に消えている。
+#   cgd (NetBSD) や softraid crypto (OpenBSD) に進むときは、それぞれの
+#   VM を立てることになる。立て方は下の「VM の作り直し方」と同じ形。
+
+# 2026-09-22  DragonFly 向けの rustc を netbsd-ci-images の release に置いた
+#   gh release delete dragonfly-rust --repo zakinko/netbsd-ci-images
+#   → 消さない。CI の dragonfly job がここから取って本体を試験している。
+#     消すと DragonFly の試験が止まる。1.86 と 1.87 は chain の中間生成物で、
+#     次に版を上げるときの種になる。
