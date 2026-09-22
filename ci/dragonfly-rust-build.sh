@@ -339,7 +339,9 @@ if [ -n "${SARACHI_PIC_PROBE:-}" ]; then
 	# **必ず exit 0 で終わること。** run が失敗すると vmactions は作業結果を
 	# 持ち帰らない。一度それで 45 分走らせて手ぶらになった。
 	set +e
-	python3 x.py build --stage 0 cargo -v > "$WRK/x.log" 2>&1
+	# -v 一つでは cargo の -vv にならず、build script の出力が出ない。
+	# cc がどう呼ばれたかを見たいので二つ重ねる。
+	python3 x.py build --stage 0 cargo -vv > "$WRK/x.log" 2>&1
 	RC=$?
 	set -e
 	echo "  x.py の終了状態: $RC"
@@ -349,7 +351,10 @@ if [ -n "${SARACHI_PIC_PROBE:-}" ]; then
 	# という形で既に二度外している。
 	# 末尾だけ切ると、C を建てた所が落ちる。実際それで一度外した。
 	# 要る所だけ抜いて持ち帰る。
-	grep -a 'libssh2' "$WRK/x.log" > "$ROOT_DIR/probe-out/libssh2.log" || true
+	{
+		grep -a 'libssh2' "$WRK/x.log"
+		grep -a 'running:' "$WRK/x.log"
+	} > "$ROOT_DIR/probe-out/libssh2.log" 2>/dev/null || true
 	wc -l < "$ROOT_DIR/probe-out/libssh2.log" \
 		| awk '{print "  libssh2 に触れる行 "$1" 件"}'
 
