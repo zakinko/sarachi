@@ -49,6 +49,8 @@ pub struct Plan<'a> {
     pub escrow: crate::escrow::Kind,
     /// この台の名前。預け先で台を見分けるのに要る。
     pub device_id: &'a str,
+    /// control plane の在処。cgd が params に書き込むのに要る。
+    pub escrow_url: Option<String>,
     pub commit: bool,
     /// **試験用。** 作った鍵を 16 進でコンソールへ出す。
     /// 本番でこれを立ててはいけない。回復環境の出力がどこへ流れるか分からない。
@@ -166,7 +168,14 @@ pub fn run(plan: &Plan, trusted: &VerifyingKey) -> Result<()> {
     let root_dev = wipe::part_path(plan.disk, root_part.index);
     settle(&root_dev)?;
 
-    let cr = crypt::for_kind(plan.root_kind)?;
+    let cr = crypt::for_kind(
+        plan.root_kind,
+        &crypt::Setup {
+            device_id: plan.device_id,
+            escrow_url: plan.escrow_url.as_deref(),
+            ..Default::default()
+        },
+    )?;
     println!(
         "3. 台ごとの鍵で {} を作る（{}）",
         cr.name(),

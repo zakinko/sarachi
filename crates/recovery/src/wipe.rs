@@ -7,7 +7,7 @@
 //! 入れ直すので入れ直す主体が要り、第 3 段は入れ直さないので消してよい。
 
 use crate::crypt;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use sarachi_disk::{Layout, Role, RootKind};
 use sarachi_order::Level;
 use std::fs::OpenOptions;
@@ -115,7 +115,21 @@ pub fn run(
     };
 
     // 本体。鍵を破棄すればマスター鍵は復元できない。
-    let cr = crypt::for_kind(root_kind)?;
+    let cr = crypt::for_kind(root_kind, &crypt::Setup::default())?;
+
+    // 鍵材料がディスク上に無い暗号層がある（cgd）。そこで erase を呼んでも
+    // 壊す物が無い。**黙って成功を返すと「消したつもりで消えていない」に
+    // なる**ので、何をすべきかを言って止まる。
+    if !cr.has_on_disk_key() {
+        bail!(
+            "{} はディスク上に鍵材料を持たない。ここでは消せない。\n\
+             消去は control plane で鍵を失効させること:\n\
+             \tPOST /v1/revoke/<device_id>\n\
+             鍵を手元に置いていない前提の設計なので、失効させれば二度と開かない",
+            cr.name()
+        );
+    }
+
     if cr.is_container(&root) {
         cr.erase(&root)?;
         r.crypto_erased = true;

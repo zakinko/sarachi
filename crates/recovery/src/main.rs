@@ -287,6 +287,7 @@ fn main() -> Result<()> {
                 },
                 escrow,
                 device_id: &device_id,
+                escrow_url: opt("--escrow-url"),
                 commit: args.iter().any(|a| a == "--commit"),
                 print_key: args.iter().any(|a| a == "--print-key"),
             };
