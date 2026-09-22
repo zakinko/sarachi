@@ -4,3 +4,4 @@ target/
 *.iso
 .ci-libkrimes/
 .ci-crypt/
+.ci-toolchain/

@@ -82,9 +82,12 @@ jobs:
             # 通ったままになる。消去は目で見て分からないので、ここで守る。
             sh ci/crypt-real.sh
 
-  # DragonFly が配る rust は 1.85 と古く、現行の crate 生態系に追いつかない
-  # ことを実機で確かめてある。ここで見たいのは当て物が効くかだけなので、
-  # libhimmelblau までは建てない。
+  # DragonFly だけ、配布の rust を使わない。DPorts が配るのは 1.85.1 で
+  # 2025-04-05 から動いておらず、本体が使う is_multiple_of (1.87 以降) が
+  # 通らない。自前で建てた 1.88 を置き場から取る。
+  #
+  # 以前ここは libkrimes の当て物だけを見ていた。本体を試験していなかった
+  # ので、DragonFly で動くかどうかが分からないままだった。それが塞げる。
   dragonfly:
     runs-on: ubuntu-latest
     steps:
@@ -93,8 +96,13 @@ jobs:
         with:
           release: '6.4.2'
           usesh: true
-          prepare: pkg install -y rust
+          # rust は入れない（置き場から取る）。bash は rustc の install.sh が
+          # #!/usr/bin/env bash で始まるので要る。libssh2 は挙げない。既に
+          # 入っているうえ、挙げると pkg が upgrade を試みて他を巻き添えに
+          # 消す。
+          prepare: pkg install -y bash curl
           run: |
             set -e
-            rustc --version
+            sh ci/dragonfly-toolchain.sh
+            cargo test --workspace
             sh ci/libkrimes-check.sh
