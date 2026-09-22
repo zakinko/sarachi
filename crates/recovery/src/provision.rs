@@ -42,8 +42,13 @@ pub struct Plan<'a> {
     /// root に何を載せるか。型 GUID と暗号層の両方がこれで決まる。
     pub root_kind: RootKind,
     pub bundle: Bundle<'a>,
-    /// 作った鍵の書き出し先。本番では TPM か control plane へ。
-    pub key_out: &'a Path,
+    /// 作った鍵をどこへ預けるか。
+    ///
+    /// 既定はファイル（試験用）。本番は control plane を正とし、TPM を
+    /// 補助、パスフレーズを非常口にする三枚重ね。詳しくは [`crate::escrow`]。
+    pub escrow: crate::escrow::Kind,
+    /// この台の名前。預け先で台を見分けるのに要る。
+    pub device_id: &'a str,
     pub commit: bool,
     /// **試験用。** 作った鍵を 16 進でコンソールへ出す。
     /// 本番でこれを立ててはいけない。回復環境の出力がどこへ流れるか分からない。
@@ -168,13 +173,18 @@ pub fn run(plan: &Plan, trusted: &VerifyingKey) -> Result<()> {
         root_dev.display()
     );
     let key = crypt::generate_key()?;
+
+    // **預けてから容器を作る。** 逆にすると、預け先に届かなかったときに
+    // 「暗号化されているが誰も開けられない塊」が残る。format は中身を
+    // 失わせるので、そこを越えてから失敗してはいけない。
+    //
+    // 消去の前に救済が壊れる形で、しかも壊れたことは次に開こうとするまで
+    // 分からない。順序だけで防げるなら、順序で防ぐ。
+    let esc = crate::escrow::for_kind(plan.escrow.clone())?;
+    esc.store(plan.device_id, &key)?;
+    println!("   鍵を {} へ預けた", esc.name());
+
     cr.format(&root_dev, &key)?;
-    std::fs::write(plan.key_out, &key)
-        .with_context(|| format!("鍵を {} に書けない", plan.key_out.display()))?;
-    println!(
-        "   鍵を {} に置いた（本番では TPM か control plane へ）",
-        plan.key_out.display()
-    );
     if plan.print_key {
         println!(
             "   [試験用] 鍵: {}",

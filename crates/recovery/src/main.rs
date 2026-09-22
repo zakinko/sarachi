@@ -13,6 +13,7 @@ use std::fs::OpenOptions;
 
 mod block;
 mod crypt;
+mod escrow;
 mod fetch;
 mod install;
 mod provision;
@@ -33,8 +34,12 @@ fn usage() -> ! {
   provision <device> --base <url> --key <file> [--commit]
                      [--esp <name>] [--recovery <name>] [--rootfs <name>]
                      [--key-out <file>] [--print-key] [--root-kind <k>]
+                     [--escrow-url <https://…> [--escrow-token <t>]]
+                     [--escrow-tpm] [--device-id <id>]
                               切る→ESPと回復領域を埋める→台ごとの鍵で
                               暗号化して root を書く、を一周
+                              鍵の預け先は既定でファイル（試験用）。
+                              本番は --escrow-url で control plane へ
 
 引数を間違えた時に消えては困るので、--commit が無ければ書き込みはしない。"
     );
@@ -209,7 +214,21 @@ fn main() -> Result<()> {
             let rootfs = opt("--rootfs").unwrap_or_else(|| "rootfs".into());
             let esp = opt("--esp");
             let recovery = opt("--recovery");
+            // 鍵の預け先。--escrow-url を渡せば control plane、無ければ
+            // ファイル（試験用）。詳しくは escrow.rs。
             let key_out = opt("--key-out").unwrap_or_else(|| "/run/sarachi-root.key".into());
+            let escrow = if args.iter().any(|a| a == "--escrow-tpm") {
+                crate::escrow::Kind::Tpm
+            } else {
+                match opt("--escrow-url") {
+                    Some(base) => crate::escrow::Kind::ControlPlane {
+                        base,
+                        token: opt("--escrow-token").unwrap_or_default(),
+                    },
+                    None => crate::escrow::Kind::File(std::path::PathBuf::from(&key_out)),
+                }
+            };
+            let device_id = opt("--device-id").unwrap_or_else(|| "unknown".into());
             let trusted = install::load_key(std::path::Path::new(&key_path))?;
             let d = find(dev)?;
             println!("{}\n", d.describe());
@@ -227,7 +246,8 @@ fn main() -> Result<()> {
                     recovery: recovery.as_deref(),
                     rootfs: &rootfs,
                 },
-                key_out: std::path::Path::new(&key_out),
+                escrow,
+                device_id: &device_id,
                 commit: args.iter().any(|a| a == "--commit"),
                 print_key: args.iter().any(|a| a == "--print-key"),
             };
