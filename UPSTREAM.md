@@ -60,27 +60,53 @@ FreeBSD の `sha256` は `-c digest` で照合できるが、DragonFly の `sbin
 
 ### -sys crate の C に -fPIC が付かない
 
-**状態**: **原因を突き止められていない。このままでは報告できない。**
+**状態**: 未解決。**単独では再現しない**ところまで詰めた。報告先はまだ決められない。
 
-DragonFly は既定で PIE を作るが、`cargo` を建てるときに `libssh2-sys` の
-object がこうなる。
+DragonFly は既定で PIE を作るが、rust の build が `cargo` を建てるときに
+`libssh2-sys` の object がこうなる。
 
 	liblibssh2_sys-….rlib(agent.o): relocation R_X86_64_32 against
 	  .rodata.str1.1 can not be used when making a PIE object
 
-分かっていること。
+#### 潰した仮説（どれも外れ）
 
-- `cc-rs` は dragonfly でも既定で `-fPIC` を付ける（除外は windows / none /
-  uefi / vita / wasm だけ）
-- rust の bootstrap は `CRATE_CC_NO_DEFAULTS` を立てていない
-- `libssh2-sys` 0.3.1 の `build.rs` は `cc::Build` を使っている
+| 仮説 | 確かめ方 | 結果 |
+|---|---|---|
+| cc-rs が dragonfly に `-fPIC` を付けない | `cc` 1.1.22 の source を読む | 付ける。除外は windows / `-none-` / uefi だけ |
+| rust が `CRATE_CC_NO_DEFAULTS` を立てている | bootstrap の source を読む | 立てていない |
+| `libssh2-sys` が `.pic(false)` する | `build.rs` 全体を読む | `pic` に一切触れていない |
+| cc の版が違う（1.4.7 と 1.1.22） | 実機で 1.1.22 に固定して単独ビルド | 再現せず |
+| bootstrap が立てる空の `CFLAGS_<triple>` が既定を止める | 同じ環境変数を立てて単独ビルド | `-fPIC` は渡る |
 
-**それなのに付いていない。** 素の `CFLAGS`、`CFLAGS_<triple>`、`config.toml`
-の `cc` を包む、の三つを試して、どれも届かなかった。
+#### 分かっていること（実機で測った）
 
-回避は `LIBSSH2_SYS_USE_PKG_CONFIG=1` で C を建てさせないこと。**回避であって
-解決ではない。** どこで落ちているかを掴んでから、`cc-rs` か rust の bootstrap
-か `libssh2-sys` のどれに出すかを決める。
+**単独の `cargo` では、cc-rs は正しく `-fPIC` を渡し、正しい object が出る。**
+
+	running: "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC"
+	  "-gdwarf-2" … -o …/agent.o -c libssh2/src/agent.c
+
+出来た object を節ごとに数えた結果（`cc` 1.1.22、DragonFly 6.4.2）。
+
+	load される節   非 PIC 0    PIC 向け 112
+	.debug_info 等  非 PIC 684
+
+**`.debug_info` の 684 件は `-g` を付ければ正常に入るもの**で、PIE の妨げに
+ならない。ここを混ぜて数えると、正常な object が壊れて見える。一度そう読んで
+誤った結論を出しかけた。
+
+#### 残っている問い
+
+**rust の bootstrap が `cargo` を建てるときだけ壊れる。何が違うのか。**
+
+本番で `CC_ENABLE_DEBUG_OUTPUT=1` を付けて走らせ、`agent.c` の command line を
+捕まえるところまで作った（`ci/dragonfly-rust-build.sh` の `SARACHI_PIC_PROBE`）。
+ただし **run が失敗すると vmactions が作業結果を持ち帰らない**ので、まだ回収
+できていない。次に触るときは、下調べの側を `exit 0` で終わらせること。
+
+#### 回避
+
+`LIBSSH2_SYS_USE_PKG_CONFIG=1` で C を建てさせない。**回避であって解決では
+ない。** 代償として、出来た `cargo` は package の `libssh2` を要る。
 
 ---
 
