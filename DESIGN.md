@@ -47,6 +47,77 @@ learn.microsoft.com の RemoteWipe CSP による。重要なのは **doWipe が�
 → `WipeOrder` の wipe レベルはこの三段を採用する。
   「電源を抜けば逃げられる wipe」と「意地でも消す wipe」を分ける判断は真似る価値がある。
 
+### Intune を実際に動かすのに要るもの（2026-10-29 調査）
+
+learn.microsoft.com の free-trial-sign-up、Linux platform scripts、supported
+operating systems、Windows Autopilot requirements による。あわせて
+`libhimmelblau` 0.8.41 のソースを読んだ。
+
+**テナントは 30 日試用で足りる。** Intune Plan 1 の試用は EMS 相当（Entra ID
+P1/P2 + Intune）が付く。新しいテナント `<名前>.onmicrosoft.com` ができ、この
+`onmicrosoft.com` の部分は後から改名も削除もできない。クレジットカードは本人
+確認だけに使われる。管理センターへのサインインは MFA 必須で、作成者が全体管理者
+になり、MDM 機関は既定で Intune。既存の職場アカウントとは結合できない。
+
+アカデミックの道は使えない。**Microsoft 365** A1/A3/A5 は Intune for Education
+を含むが、**Office 365** A1/A3/A5 は含まず、教育機関に無償提供されるのは
+Office 365 A1 である。開発者プログラムのサンドボックスは Visual Studio
+Professional/Enterprise の年間サブスクリプションが要る（月額は対象外）。
+
+**自前のアプリ登録は要らない。** `libhimmelblau` の `src/auth.rs` は
+Microsoft の第一者アプリ ID をハードコードしている。
+
+| 定数 | 値 | 用途 |
+|---|---|---|
+| `BROKER_APP_ID` | `29d9ed98-a469-4536-ade2-f981bc1d605e` | Authentication Broker |
+| `LINUX_BROKER_APP_ID` | `b743a22d-6705-4147-8670-d92fa515ee2b` | Linux の broker 経路 |
+| `DRS_APP_ID` | `01cb2876-7ebd-4aa4-9cc9-d28bd4d359a9` | Device Registration Service |
+| `INTUNE_RESOURCE` | `0000000a-0000-0000-c000-000000000000` | Intune のリソース |
+
+`client_id` を外から渡す口は `src/confidential_client.rs` の on-behalf-of
+（サービス間）だけで、デバイス登録と Intune 登録はそこを通らない。テナントを
+作ればそのまま試せる。
+
+**Linux 側の制約は二つが設計に効く。** Platform scripts（Devices > Manage
+devices > Scripts and remediations > Platform scripts > Add > Linux、`.sh` のみ）
+は実行文脈が Root で、
+
+> The script always runs (with or without users logged in) at the device level.
+> The first time the script executes, the end user might have to consent.
+
+と書かれている。**無人機で初回の同意待ちに掛かるかどうかが分からない。**
+そして**実行間隔の既定は 15 分で、これが最短**。`Retire` を check-in で検知する
+経路（アダプタ 2）の遅れの下限がここで決まる。カスタム構成プロファイルに機密を
+載せないよう注意書きもある。
+
+対応プラットフォームの確定一覧は Ubuntu Desktop 24.04 / 26.04 LTS (GNOME)、
+Ubuntu LTS 24.04 / 26.04、RHEL 9、RHEL 10。**RHEL 8 は対応外**である。カスタム
+スクリプトのページの前提条件行は RHEL 8 を挙げて RHEL 10 を落としているが、同じ
+ページがこの一覧を正としてリンクしているので、一覧が正。登録はアプリ経由で
+利用者の操作が要り、法人所有機のみ、WSL2 は非対応。
+
+クローンを非対応とする記述はここにある。
+
+> Intune does not support using a cloned image of a computer that is already
+> enrolled. This includes both physical and virtual devices.
+
+**Autopilot は Windows PC と HoloLens 2 だけ**なので、sarachi の Linux/BSD 経路
+には使えない。意味論を借りた一段目（AutomaticRedeployment = Autopilot Reset）を
+実物で見たい場合に限って意味がある。ライセンスは上の試用で足りる（EMS E3/E5、
+または Entra ID P1/P2 + Intune）。対応エディションは Windows 11 Pro /
+Pro Education / Pro for Workstations / Enterprise / Education / Enterprise LTSC
+で、IoT Enterprise は **Teams Rooms 機のみ**。ARM64 の 90 日評価版として実在を
+確認できるのは IoT Enterprise LTSC 2024 だけなので、評価版では Autopilot の
+対象エディションにならない。self-deploying mode と pre-provisioning は TPM
+attestation（`*.microsoftaik.azure.net` ほか）が要るが、Autopilot Reset と
+user-driven mode にはその条件が付かない。
+
+試用の 30 日は、実機でしか分からない三つに充てる。
+
+1. Root 文脈のスクリプトが、利用者のいない機で同意待ちに掛かるか
+2. 対象の distro が実際に登録できるか
+3. `Retire` を端末側から検知できるか（`GetManagementState` の戻り）
+
 ### WinRE の作り（WinRE technical reference)
 
 1. **RAM ディスク起動** — 「winre.wim 全体を収められる連続した物理メモリが必要」。
