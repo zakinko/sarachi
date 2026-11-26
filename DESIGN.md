@@ -954,15 +954,34 @@ the key from stdout」の一文だけで、形式に触れていない。`sbin/c
 
 - **生のバイト列をそのまま読む。** base64 でも 16 進でもない。同じ
   `params` の `key` と `salt` が base64 なので、ここだけ符号化が無い。
-- **改行の扱いは無い。** 鍵バイトの一部として読まれるので、`echo` で出すと
-  末尾の `\n` が鍵に混ざる。`printf` か、鍵をそのまま write する。
 - **長さは `keylength` から決まる分だけ。** 足りなければ `fread` が 1 を
   返さず `command output too short` で終わる。余った出力は読まれない。
+- **改行は、鍵材料が足りている限り混ざらない。** 32 byte 出した後の改行は
+  33 byte 目なので読まれない。混ざるのは鍵材料が `keylength` に足りない
+  ときで、改行がその不足を埋める位置に来る場合である。
 - **終了ステータスは見られる。** `pclose` が 0 を返さないと失敗する。
   鍵を出した後で非 0 で終わるコマンドは通らない。
 
-実機で `shell_cmd` 経由の起動を通したわけではないので、そこは残る。ただし
-鍵を何バイトどう出せばよいかは、もう推測しなくてよい。
+techne (NetBSD 11.1/amd64) の vnd 上で実測した。`keylength 256` の params を
+五つ作り、鍵を出すコマンドだけ変えた。
+
+| | コマンドの出力 | 結果 |
+|---|---|---|
+| A | 32 byte ちょうど | 成功。書いた marker が読める |
+| B | 32 byte + 改行（33 byte） | 成功。**A と同じ鍵**で、A の marker が読める |
+| C | 31 byte + 改行（32 byte） | 成功するが**別の鍵**。A の marker は読めない |
+| D | 31 byte だけ | `cgdconfig: command output too short` |
+| E | 32 byte 出して `exit 3` | `cgdconfig: command failed with status 768: Undefined error: 0` |
+
+**A と B が同じ鍵になる**ことは、source を読んだだけの時点では逆に書いていた
+（「`echo` で出すと改行が鍵に混ざる」）。`fread` が先頭の `BITS2BYTES(keylen)`
+byte しか読まないのだから B で改行が入る余地は無く、実測が先に要った。
+
+E のメッセージには二つ誤りがある。`pclose` の戻りは wait status なので
+`exit 3` が 768 と出ており、`WEXITSTATUS` を通していない。そして errno が
+立っていないのに `err` を使っているので `Undefined error: 0` が付く。同じ
+関数の `popen` 失敗側は逆に、errno が立つのに `errx` である。上流への報告を
+書く。
 
 ### DragonFly 向けの rustc を自前で建てた（2026-09-22）— libhimmelblau が建つ
 
