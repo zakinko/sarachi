@@ -942,11 +942,27 @@ platform では control plane は「便利で中央管理できる」だが、Ne
 platform ごとに変えてよい**、という形になりそうだが、これは実装して確かめて
 から決める。
 
-#### まだ確かめていないこと
+#### `shell_cmd` の鍵の形式を source で確定した（2026-11-26）
 
-`shell_cmd` が回復環境と実機の両方で期待どおり動くか、実機で見ていない。
-`cgdconfig` が鍵を stdout からどう読むか（長さ、符号化、改行の扱い）も
-man からは読み取れていない。実装はそこを確かめてから。
+man の `shell_cmd` の記述は「executes a shell command via popen(3) and reads
+the key from stdout」の一文だけで、形式に触れていない。`sbin/cgdconfig` を
+読んで確定した。
+
+`getkey_shell_cmd()` は `popen(3)` で開いた stream を `bits_fget(f, keylen)` に
+渡し、`bits_fget()` は `fread(text, BITS2BYTES(keylen), 1, f)` を一度呼ぶだけ
+である（`utils.h` の `BITS2BYTES(n)` は `((n) + 7) / 8`）。したがって、
+
+- **生のバイト列をそのまま読む。** base64 でも 16 進でもない。同じ
+  `params` の `key` と `salt` が base64 なので、ここだけ符号化が無い。
+- **改行の扱いは無い。** 鍵バイトの一部として読まれるので、`echo` で出すと
+  末尾の `\n` が鍵に混ざる。`printf` か、鍵をそのまま write する。
+- **長さは `keylength` から決まる分だけ。** 足りなければ `fread` が 1 を
+  返さず `command output too short` で終わる。余った出力は読まれない。
+- **終了ステータスは見られる。** `pclose` が 0 を返さないと失敗する。
+  鍵を出した後で非 0 で終わるコマンドは通らない。
+
+実機で `shell_cmd` 経由の起動を通したわけではないので、そこは残る。ただし
+鍵を何バイトどう出せばよいかは、もう推測しなくてよい。
 
 ### DragonFly 向けの rustc を自前で建てた（2026-09-22）— libhimmelblau が建つ
 
